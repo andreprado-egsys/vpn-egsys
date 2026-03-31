@@ -4,32 +4,46 @@ Instalador e monitor de VPN Check Point para as redes **RO (Rondônia)** e **PR 
 
 ## O que faz
 
-- Instala o `snx-rs` (cliente VPN Check Point moderno, em Rust)
-- Configura credenciais para VPN RO e VPN PR
-- Instala monitor na bandeja do sistema (tray icon) que mostra qual VPN está conectada
-- Cria aliases no terminal para conexão rápida
-- Autostart no login
+O `install.sh` executa tudo automaticamente:
 
-## Requisitos
+1. Detecta o SO e gerenciador de pacotes (apt/dnf/pacman)
+2. Instala o `snx-rs` (cliente VPN Check Point em Rust)
+3. Instala dependências do tray icon
+4. Pede usuário e senha de cada VPN (RO e PR)
+5. Cria os arquivos de configuração
+6. Instala o monitor na bandeja do sistema
+7. Configura aliases no terminal
+8. Testa conectividade com os servidores
+9. Inicia o tray icon na bandeja
 
-- Ubuntu/Kubuntu 22.04+ (testado em 25.10)
-- KDE Plasma (para o tray icon)
-- Acesso sudo (para instalar snx-rs e configurar permissões)
+## Sistemas suportados
+
+| Distro | Gerenciador | Status |
+|--------|-------------|--------|
+| Ubuntu/Kubuntu 22.04+ | apt | ✓ Testado |
+| Debian 12+ | apt | ✓ |
+| Fedora 38+ | dnf | ✓ |
+| Arch Linux | pacman | ✓ |
+
+Requer: x86_64, Python 3, desktop com suporte a tray icon.
 
 ## Instalação
 
 ```bash
 git clone https://github.com/<seu-usuario>/vpn-egsys.git
 cd vpn-egsys
-chmod +x install.sh
 ./install.sh
 ```
 
-O instalador vai pedir:
-1. Usuário e senha da VPN RO
-2. Usuário e senha da VPN PR
+O instalador pede:
+```
+Usuário RO: <cpf ou login>
+Senha RO: <senha>
+Usuário PR: <login.egsys>
+Senha PR: <senha>
+```
 
-As senhas são armazenadas em base64 nos configs locais (`~/.config/snx-rs/`).
+Ao final, o ícone já aparece na bandeja do sistema.
 
 ## Uso
 
@@ -39,27 +53,26 @@ As senhas são armazenadas em base64 nos configs locais (`~/.config/snx-rs/`).
 vpnro        # Conectar VPN Rondônia
 vpnpr        # Conectar VPN Paraná
 vpnoff       # Desconectar
-vpnstatus    # Ver status da conexão
+vpnstatus    # Ver status
 ```
 
-### Interface gráfica
+### Bandeja do sistema
 
-- Procure **"VPN Monitor"** no menu de aplicativos
-- Um ícone aparece na bandeja do sistema (ao lado do relógio)
-- Clique no ícone para:
-  - Ver qual VPN está conectada
-  - Conectar VPN RO ou PR
-  - Desconectar
+Ícone ao lado do relógio:
+- 🟢 Cadeado verde → Conectado (mostra qual VPN)
+- ⚫ Cadeado cinza → Desconectado
 
-O ícone muda automaticamente:
-- 🔒 `network-vpn` → Conectado (mostra qual VPN)
-- 🔓 `network-vpn-disabled` → Desconectado
+Menu do ícone:
+- Status da conexão
+- Conectar VPN RO / PR
+- Desconectar
+- Sair
+
+O monitor inicia automaticamente no login.
 
 ## Desinstalação
 
 ```bash
-cd vpn-egsys
-chmod +x uninstall.sh
 ./uninstall.sh
 ```
 
@@ -67,29 +80,20 @@ chmod +x uninstall.sh
 
 ```
 vpn-egsys/
-├── install.sh      # Instalador interativo
-├── uninstall.sh    # Desinstalador
-├── vpn-tray        # Monitor da bandeja (Python/GTK)
+├── install.sh                  # Instalador interativo
+├── uninstall.sh                # Desinstalador
+├── vpn-tray                    # Monitor da bandeja (Python/GTK)
+├── icons/
+│   ├── vpn-connected.svg       # Ícone verde (conectado)
+│   └── vpn-disconnected.svg    # Ícone cinza (desconectado)
 ├── README.md
 └── LICENSE
 ```
 
-## Arquivos instalados
-
-| Arquivo | Descrição |
-|---------|-----------|
-| `~/.config/snx-rs/vpnro.conf` | Config VPN RO |
-| `~/.config/snx-rs/vpnpr.conf` | Config VPN PR |
-| `~/.config/snx-rs/snx-rs.conf` | Config padrão (cópia do ativo) |
-| `~/.local/bin/vpn-tray` | Script do monitor |
-| `~/.local/share/applications/vpn-egsys.desktop` | Atalho no menu |
-| `~/.config/autostart/vpn-tray.desktop` | Autostart no login |
-
 ## Notas
 
-- O `snx-rs` precisa de permissão SUID para criar interfaces de túnel. O instalador configura isso automaticamente.
-- Se o `snx-rs` for atualizado via `apt`, o SUID é perdido. Rode `./install.sh` novamente ou: `sudo chmod u+s /usr/bin/snx-rs /usr/bin/snxctl`
-- As senhas ficam em base64 (não é criptografia). Proteja os arquivos de config.
+- Se o `snx-rs` for atualizado, rode `./install.sh` novamente para restaurar permissões SUID.
+- Senhas ficam em base64 nos configs (`~/.config/snx-rs/`). Os arquivos são criados com permissão 600.
 
 ## Licença
 
