@@ -10,6 +10,10 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('AyatanaAppIndicator3', '0.1')
 from gi.repository import Gtk, AyatanaAppIndicator3, GLib
 
+ICON_DIR = os.path.expanduser('~/.local/share/icons/vpn-egsys')
+ICON_ON = os.path.join(ICON_DIR, 'vpn-connected')
+ICON_OFF = os.path.join(ICON_DIR, 'vpn-disconnected')
+
 CONFIGS = {
     'vpnro': ('VPN RO - Rondônia', os.path.expanduser('~/.config/snx-rs/vpnro.conf')),
     'vpnpr': ('VPN PR - Paraná', os.path.expanduser('~/.config/snx-rs/vpnpr.conf')),
@@ -18,13 +22,12 @@ CONFIGS = {
 
 class VPNTray:
     def __init__(self):
-        self.connected = False
-        self.vpn_name = ''
-        self.indicator = AyatanaAppIndicator3.Indicator.new(
-            'vpn-monitor', 'network-vpn-disabled',
-            AyatanaAppIndicator3.IndicatorCategory.APPLICATION_STATUS)
+        self.indicator = AyatanaAppIndicator3.Indicator.new_with_path(
+            'vpn-monitor', 'vpn-disconnected',
+            AyatanaAppIndicator3.IndicatorCategory.APPLICATION_STATUS,
+            ICON_DIR)
         self.indicator.set_status(AyatanaAppIndicator3.IndicatorStatus.ACTIVE)
-        self.indicator.set_title('VPN Monitor')
+        self.indicator.set_title('VPN Desconectada')
         self.build_menu()
         GLib.timeout_add_seconds(3, self.check_status)
         self.check_status()
@@ -32,7 +35,7 @@ class VPNTray:
     def build_menu(self):
         menu = Gtk.Menu()
 
-        self.status_item = Gtk.MenuItem(label='Desconectado')
+        self.status_item = Gtk.MenuItem(label='✗ Desconectado')
         self.status_item.set_sensitive(False)
         menu.append(self.status_item)
         menu.append(Gtk.SeparatorMenuItem())
@@ -82,15 +85,11 @@ class VPNTray:
     def check_status(self):
         vpn = self.get_active_vpn()
         if vpn:
-            self.connected = True
-            self.vpn_name = vpn
-            self.indicator.set_icon_full('network-vpn', f'Conectado: {vpn}')
+            self.indicator.set_icon_full('vpn-connected', f'Conectado: {vpn}')
             self.indicator.set_title(f'VPN: {vpn}')
             self.status_item.set_label(f'✓ {vpn}')
         else:
-            self.connected = False
-            self.vpn_name = ''
-            self.indicator.set_icon_full('network-vpn-disabled', 'Desconectado')
+            self.indicator.set_icon_full('vpn-disconnected', 'Desconectado')
             self.indicator.set_title('VPN Desconectada')
             self.status_item.set_label('✗ Desconectado')
         return True

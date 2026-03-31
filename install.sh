@@ -97,7 +97,11 @@ mkdir -p "$LOCAL_BIN"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cp "$SCRIPT_DIR/vpn-tray" "$LOCAL_BIN/vpn-tray"
 chmod +x "$LOCAL_BIN/vpn-tray"
-info "vpn-tray instalado em $LOCAL_BIN"
+
+ICON_DIR="$HOME/.local/share/icons/vpn-egsys"
+mkdir -p "$ICON_DIR"
+cp "$SCRIPT_DIR/icons/"*.svg "$ICON_DIR/"
+info "vpn-tray e ícones instalados"
 
 # --- 7. Desktop entry e autostart ---
 mkdir -p "$APPS_DIR" "$AUTOSTART_DIR"
