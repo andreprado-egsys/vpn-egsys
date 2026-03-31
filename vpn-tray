@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""vpn-tray - Monitor de VPN snx-rs na bandeja do sistema."""
+
+import gi
+import subprocess
+import os
+import signal
+
+gi.require_version('Gtk', '3.0')
+gi.require_version('AyatanaAppIndicator3', '0.1')
+from gi.repository import Gtk, AyatanaAppIndicator3, GLib
+
+CONFIGS = {
+    'vpnro': ('VPN RO - Rondônia', os.path.expanduser('~/.config/snx-rs/vpnro.conf')),
+    'vpnpr': ('VPN PR - Paraná', os.path.expanduser('~/.config/snx-rs/vpnpr.conf')),
+}
+
+
+class VPNTray:
+    def __init__(self):
+        self.connected = False
+        self.vpn_name = ''
+        self.indicator = AyatanaAppIndicator3.Indicator.new(
+            'vpn-monitor', 'network-vpn-disabled',
+            AyatanaAppIndicator3.IndicatorCategory.APPLICATION_STATUS)
+        self.indicator.set_status(AyatanaAppIndicator3.IndicatorStatus.ACTIVE)
+        self.indicator.set_title('VPN Monitor')
+        self.build_menu()
+        GLib.timeout_add_seconds(3, self.check_status)
+        self.check_status()
+
+    def build_menu(self):
+        menu = Gtk.Menu()
+
+        self.status_item = Gtk.MenuItem(label='Desconectado')
+        self.status_item.set_sensitive(False)
+        menu.append(self.status_item)
+        menu.append(Gtk.SeparatorMenuItem())
+
+        for key, (name, _) in CONFIGS.items():
+            item = Gtk.MenuItem(label=f'Conectar {name}')
+            item.connect('activate', self.on_connect, key)
+            menu.append(item)
+
+        menu.append(Gtk.SeparatorMenuItem())
+
+        disc = Gtk.MenuItem(label='Desconectar')
+        disc.connect('activate', self.on_disconnect)
+        menu.append(disc)
+
+        menu.append(Gtk.SeparatorMenuItem())
+
+        quit_item = Gtk.MenuItem(label='Sair')
+        quit_item.connect('activate', self.on_quit)
+        menu.append(quit_item)
+
+        menu.show_all()
+        self.indicator.set_menu(menu)
+
+    def get_active_vpn(self):
+        try:
+            r = subprocess.run(['ip', 'link', 'show', 'snx-xfrm'],
+                               capture_output=True, text=True, timeout=3)
+            if r.returncode != 0:
+                return None
+            ps = subprocess.run(['ps', 'aux'], capture_output=True, text=True, timeout=3)
+            for key, (name, conf) in CONFIGS.items():
+                if conf in ps.stdout:
+                    return name
+            conf_path = os.path.expanduser('~/.config/snx-rs/snx-rs.conf')
+            if os.path.exists(conf_path):
+                with open(conf_path) as f:
+                    content = f.read()
+                for key, (name, _) in CONFIGS.items():
+                    with open(CONFIGS[key][1]) as f2:
+                        if f2.read().strip() == content.strip():
+                            return name
+            return 'VPN Conectada'
+        except Exception:
+            return None
+
+    def check_status(self):
+        vpn = self.get_active_vpn()
+        if vpn:
+            self.connected = True
+            self.vpn_name = vpn
+            self.indicator.set_icon_full('network-vpn', f'Conectado: {vpn}')
+            self.indicator.set_title(f'VPN: {vpn}')
+            self.status_item.set_label(f'✓ {vpn}')
+        else:
+            self.connected = False
+            self.vpn_name = ''
+            self.indicator.set_icon_full('network-vpn-disabled', 'Desconectado')
+            self.indicator.set_title('VPN Desconectada')
+            self.status_item.set_label('✗ Desconectado')
+        return True
+
+    def on_connect(self, widget, key):
+        _, conf = CONFIGS[key]
+        subprocess.Popen(['bash', '-c',
+            f'killall snx-rs 2>/dev/null; rm -f /run/snx-rs.lock 2>/dev/null; sleep 1; '
+            f'cp {conf} ~/.config/snx-rs/snx-rs.conf; '
+            f'nohup snx-rs -m standalone -c {conf} -l info > /tmp/snx-rs.log 2>&1 &'])
+
+    def on_disconnect(self, widget):
+        subprocess.Popen(['bash', '-c',
+            'killall snx-rs 2>/dev/null; rm -f /run/snx-rs.lock 2>/dev/null'])
+
+    def on_quit(self, widget):
+        Gtk.main_quit()
+
+
+if __name__ == '__main__':
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    VPNTray()
+    Gtk.main()
