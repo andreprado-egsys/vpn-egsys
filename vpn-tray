@@ -17,6 +17,7 @@ ICON_OFF = os.path.join(ICON_DIR, 'vpn-disconnected')
 CONFIGS = {
     'vpnro': ('VPN RO - Rondônia', os.path.expanduser('~/.config/snx-rs/vpnro.conf')),
     'vpnpr': ('VPN PR - Paraná', os.path.expanduser('~/.config/snx-rs/vpnpr.conf')),
+    'vpnam': ('VPN AM - Amazonas', os.path.expanduser('~/.config/snx-rs/vpnam.conf')),
 }
 
 

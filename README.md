@@ -34,8 +34,19 @@ Após a instalação, você pode usar os seguintes comandos:
 
 - `vpnro`: Conecta à VPN Rondônia.
 - `vpnpr`: Conecta à VPN Paraná.
+- `vpnam`: Conecta à VPN Amazonas.
 - `vpnoff`: Desconecta a VPN ativa.
 - `vpnstatus`: Verifica o status e logs da conexão.
+
+## Atualização
+
+Se você já possui a aplicação instalada e deseja apenas adicionar a nova VPN AM:
+
+```bash
+git pull
+chmod +x update.sh
+./update.sh
+```
 
 ## Dependências
 

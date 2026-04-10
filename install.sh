@@ -2,7 +2,7 @@
 set -e
 
 # vpn-egsys - Setup interativo de VPN Check Point (snx-rs)
-# Configura VPN RO (Rondônia) e VPN PR (Paraná)
+# Configura VPN RO (Rondônia), VPN PR (Paraná) e VPN AM (Amazonas)
 # Suporta: Ubuntu, Debian, Zorin, Arch Linux, CachyOS e derivados.
 
 BOLD='\033[1m'
@@ -26,7 +26,7 @@ error() { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 echo -e "${BOLD}"
 echo "╔══════════════════════════════════════╗"
 echo "║       vpn-egsys - Instalador         ║"
-echo "║   VPN Check Point (RO e PR)          ║"
+echo "║   VPN Check Point (RO, PR e AM)      ║"
 echo "║      Multi-System Support            ║"
 echo "╚══════════════════════════════════════╝"
 echo -e "${NC}"
@@ -117,43 +117,72 @@ done
 info "Permissões SUID configuradas para snx-rs"
 
 # --- 5. Credenciais ---
-if [ ! -f "$CONFIG_DIR/vpnro.conf" ] || [ ! -f "$CONFIG_DIR/vpnpr.conf" ]; then
+if [ ! -f "$CONFIG_DIR/vpnro.conf" ] || [ ! -f "$CONFIG_DIR/vpnpr.conf" ] || [ ! -f "$CONFIG_DIR/vpnam.conf" ]; then
     echo ""
     echo -e "${BOLD}=== Configuração de Credenciais ===${NC}"
     echo "Isso será feito apenas uma vez."
     
-    echo -e "\n${BOLD}VPN RO (Rondônia)${NC}"
-    read -rp "Usuário RO (ex: nome.sobrenome): " RO_USER
-    read -rsp "Senha RO: " RO_PASS
-    echo ""
-    RO_PASS_B64=$(echo -n "$RO_PASS" | base64)
-
-    echo -e "\n${BOLD}VPN PR (Paraná)${NC}"
-    read -rp "Usuário PR (ex: nome.sobrenome): " PR_USER
-    read -rsp "Senha PR: " PR_PASS
-    echo ""
-    PR_PASS_B64=$(echo -n "$PR_PASS" | base64)
-
     mkdir -p "$CONFIG_DIR"
-    
-    cat > "$CONFIG_DIR/vpnro.conf" <<EOF
+
+    echo -e "\n${BOLD}VPN RO (Rondônia)${NC}"
+    if [ ! -f "$CONFIG_DIR/vpnro.conf" ]; then
+        read -rp "Usuário RO (ex: nome.sobrenome): " RO_USER
+        read -rsp "Senha RO: " RO_PASS
+        echo ""
+        RO_PASS_B64=$(echo -n "$RO_PASS" | base64)
+        
+        cat > "$CONFIG_DIR/vpnro.conf" <<EOF
 server-name=131.72.155.42
 user-name=${RO_USER}
 password=${RO_PASS_B64}
 ignore-server-cert=true
 login-type=vpn
 EOF
+        info "Configuração VPN RO criada."
+    else
+        info "Configuração VPN RO já existe."
+    fi
 
-    cat > "$CONFIG_DIR/vpnpr.conf" <<EOF
+    echo -e "\n${BOLD}VPN PR (Paraná)${NC}"
+    if [ ! -f "$CONFIG_DIR/vpnpr.conf" ]; then
+        read -rp "Usuário PR (ex: nome.sobrenome): " PR_USER
+        read -rsp "Senha PR: " PR_PASS
+        echo ""
+        PR_PASS_B64=$(echo -n "$PR_PASS" | base64)
+
+        cat > "$CONFIG_DIR/vpnpr.conf" <<EOF
 server-name=acessoremoto.pr.gov.br
 user-name=${PR_USER}
 password=${PR_PASS_B64}
 ignore-server-cert=true
 login-type=vpn
 EOF
+        info "Configuração VPN PR criada."
+    else
+        info "Configuração VPN PR já existe."
+    fi
+
+    echo -e "\n${BOLD}VPN AM (Amazonas)${NC}"
+    if [ ! -f "$CONFIG_DIR/vpnam.conf" ]; then
+        read -rp "Usuário AM (ex: nome.sobrenome): " AM_USER
+        read -rsp "Senha AM: " AM_PASS
+        echo ""
+        AM_PASS_B64=$(echo -n "$AM_PASS" | base64)
+
+        cat > "$CONFIG_DIR/vpnam.conf" <<EOF
+server-name=sslvpn.prodam.am.gov.br
+user-name=${AM_USER}
+password=${AM_PASS_B64}
+ignore-server-cert=true
+login-type=vpn
+EOF
+        info "Configuração VPN AM criada."
+    else
+        info "Configuração VPN AM já existe."
+    fi
     
     chmod 600 "$CONFIG_DIR"/*.conf
-    info "Arquivos de configuração criados em $CONFIG_DIR"
+    info "Arquivos de configuração em $CONFIG_DIR"
 else
     info "Configurações de credenciais já existem."
 fi
@@ -171,7 +200,7 @@ mkdir -p "$APPS_DIR" "$AUTOSTART_DIR"
 cat > "$APPS_DIR/vpn-egsys.desktop" <<EOF
 [Desktop Entry]
 Name=VPN Monitor
-Comment=Monitor de VPN Check Point (RO/PR)
+Comment=Monitor de VPN Check Point (RO/PR/AM)
 Exec=${LOCAL_BIN}/vpn-tray
 Icon=${ICON_DIR}/vpn-disconnected.svg
 Terminal=false
@@ -207,6 +236,7 @@ setup_aliases() {
 $MARKER
 alias vpnro="vpnoff >/dev/null 2>&1; nohup snx-rs -m standalone -c ~/.config/snx-rs/vpnro.conf -l info > /tmp/snx-rs.log 2>&1 & sleep 3 && tail -n 10 /tmp/snx-rs.log"
 alias vpnpr="vpnoff >/dev/null 2>&1; nohup snx-rs -m standalone -c ~/.config/snx-rs/vpnpr.conf -l info > /tmp/snx-rs.log 2>&1 & sleep 3 && tail -n 10 /tmp/snx-rs.log"
+alias vpnam="vpnoff >/dev/null 2>&1; nohup snx-rs -m standalone -c ~/.config/snx-rs/vpnam.conf -l info > /tmp/snx-rs.log 2>&1 & sleep 3 && tail -n 10 /tmp/snx-rs.log"
 alias vpnoff="killall snx-rs 2>/dev/null; sleep 1; sudo rm -f /run/snx-rs.lock 2>/dev/null; echo 'VPN desconectada'"
 alias vpnstatus="tail -n 20 /tmp/snx-rs.log 2>/dev/null; ip addr show snx-xfrm 2>/dev/null || echo 'Interface snx-xfrm não encontrada'"
 $MARKER_END
@@ -230,6 +260,7 @@ echo ""
 echo "Comandos rápidos no terminal:"
 echo "  vpnro      - Conecta à VPN Rondônia"
 echo "  vpnpr      - Conecta à VPN Paraná"
+echo "  vpnam      - Conecta à VPN Amazonas"
 echo "  vpnoff     - Desconecta qualquer VPN"
 echo "  vpnstatus  - Mostra o log e status da conexão"
 echo ""

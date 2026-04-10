@@ -8,6 +8,7 @@ killall vpn-tray 2>/dev/null || true
 rm -f /run/snx-rs.lock 2>/dev/null || true
 
 rm -f ~/.local/bin/vpn-tray
+rm -f ~/.local/bin/update.sh
 rm -f ~/.local/share/applications/vpn-egsys.desktop
 rm -f ~/.config/autostart/vpn-tray.desktop
 rm -rf ~/.local/share/icons/vpn-egsys
