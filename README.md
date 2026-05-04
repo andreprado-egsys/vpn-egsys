@@ -26,15 +26,17 @@ cd vpn-egsys
 chmod +x install.sh
 ./install.sh
 ```
+**Atenção:** Após a instalação, para que os comandos da VPN funcionem sem pedir sua senha do `sudo` repetidamente (o que é exigido pois `snx-rs` roda como root), é **altamente recomendável** configurar o `NOPASSWD` no seu arquivo `sudoers`. O script de instalação exibirá as instruções exatas. Você pode fazer isso executando `sudo visudo` e adicionando uma linha como:
+`SEU_USUARIO ALL=(ALL) NOPASSWD: /caminho/do/snx-rs` (o caminho exato será exibido pelo script).
 
 ## Uso via Terminal
 
-Após a instalação, você pode usar os seguintes comandos:
+Após a instalação, você pode usar os seguintes comandos (eles serão executados com privilégios de root via `sudo`):
 
 - `vpnro`: Conecta à VPN Rondônia.
 - `vpnpr`: Conecta à VPN Paraná.
 - `vpnam`: Conecta à VPN Amazonas.
-- `vpnoff`: Desconecta a VPN ativa e encerra processos snx-rs.
+- `vpnoff`: Desconecta a VPN ativa e encerra processos `snx-rs` (requer `sudo`).
 - `vpnstatus`: Verifica o status da interface de rede e logs da conexão.
 
 ## Atualização e Configuração
@@ -46,6 +48,8 @@ git pull
 chmod +x update.sh
 ./update.sh
 ```
+**Atenção:** Similar à instalação, o script de atualização também exibirá as instruções para configurar o `NOPASSWD` no seu `sudoers`, caso ainda não o tenha feito.
+
 O script `update.sh` encerra a aplicação ativa, valida dependências do sistema e permite configurar ou atualizar as credenciais de todas as VPNs suportadas.
 
 ## Dependências
@@ -53,5 +57,5 @@ O script `update.sh` encerra a aplicação ativa, valida dependências do sistem
 O instalador cuida de tudo, mas os componentes principais são:
 - `snx-rs` (v5.2.3+)
 - `python3-gi` (PyGObject)
-- `libayatana-appindicator`
+- `libayatana-appindicator-glib`
 - `webkit2gtk` (para autenticação web se necessário)
