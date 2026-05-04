@@ -7,8 +7,8 @@ import os
 import signal
 
 gi.require_version('Gtk', '3.0')
-gi.require_version('AyatanaAppIndicator3', '0.1')
-from gi.repository import Gtk, AyatanaAppIndicator3, GLib
+gi.require_version('AyatanaAppIndicator3Glib', '0.1')
+from gi.repository import Gtk, AyatanaAppIndicator3Glib, GLib
 
 ICON_DIR = os.path.expanduser('~/.local/share/icons/vpn-egsys')
 ICON_ON = os.path.join(ICON_DIR, 'vpn-connected')
@@ -23,7 +23,7 @@ CONFIGS = {
 
 class VPNTray:
     def __init__(self):
-        self.indicator = AyatanaAppIndicator3.Indicator.new_with_path(
+        self.indicator = AyatanaAppIndicator3Glib.Indicator.new_with_path(
             'vpn-monitor', 'vpn-disconnected',
             AyatanaAppIndicator3.IndicatorCategory.APPLICATION_STATUS,
             ICON_DIR)
@@ -100,11 +100,11 @@ class VPNTray:
         subprocess.Popen(['bash', '-c',
             f'killall snx-rs 2>/dev/null; rm -f /run/snx-rs.lock 2>/dev/null; sleep 1; '
             f'cp {conf} ~/.config/snx-rs/snx-rs.conf; '
-            f'nohup snx-rs -m standalone -c {conf} -l info > /tmp/snx-rs.log 2>&1 &'])
+            f'nohup sudo snx-rs -m standalone -c {conf} -l info > /tmp/snx-rs.log 2>&1 &'])
 
     def on_disconnect(self, widget):
         subprocess.Popen(['bash', '-c',
-            'killall snx-rs 2>/dev/null; rm -f /run/snx-rs.lock 2>/dev/null'])
+            'sudo killall snx-rs 2>/dev/null; sudo rm -f /run/snx-rs.lock 2>/dev/null'])
 
     def on_quit(self, widget):
         Gtk.main_quit()

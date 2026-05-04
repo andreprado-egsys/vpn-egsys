@@ -111,9 +111,9 @@ setup_aliases() {
 
     cat >> "$shell_rc" <<ALIASES
 $MARKER
-alias vpnro="vpnoff >/dev/null 2>&1; nohup snx-rs -m standalone -c ~/.config/snx-rs/vpnro.conf -l info > /tmp/snx-rs.log 2>&1 & sleep 3 && tail -n 10 /tmp/snx-rs.log"
-alias vpnpr="vpnoff >/dev/null 2>&1; nohup snx-rs -m standalone -c ~/.config/snx-rs/vpnpr.conf -l info > /tmp/snx-rs.log 2>&1 & sleep 3 && tail -n 10 /tmp/snx-rs.log"
-alias vpnam="vpnoff >/dev/null 2>&1; nohup snx-rs -m standalone -c ~/.config/snx-rs/vpnam.conf -l info > /tmp/snx-rs.log 2>&1 & sleep 3 && tail -n 10 /tmp/snx-rs.log"
+alias vpnro="vpnoff >/dev/null 2>&1; nohup sudo snx-rs -m standalone -c ~/.config/snx-rs/vpnro.conf -l info > /tmp/snx-rs.log 2>&1 & sleep 3 && tail -n 10 /tmp/snx-rs.log"
+alias vpnpr="vpnoff >/dev/null 2>&1; nohup sudo snx-rs -m standalone -c ~/.config/snx-rs/vpnpr.conf -l info > /tmp/snx-rs.log 2>&1 & sleep 3 && tail -n 10 /tmp/snx-rs.log"
+alias vpnam="vpnoff >/dev/null 2>&1; nohup sudo snx-rs -m standalone -c ~/.config/snx-rs/vpnam.conf -l info > /tmp/snx-rs.log 2>&1 & sleep 3 && tail -n 10 /tmp/snx-rs.log"
 alias vpnoff="killall snx-rs 2>/dev/null; sleep 1; sudo rm -f /run/snx-rs.lock 2>/dev/null; echo 'VPN desconectada'"
 alias vpnstatus="tail -n 20 /tmp/snx-rs.log 2>/dev/null; ip addr show snx-xfrm 2>/dev/null || echo 'Interface snx-xfrm não encontrada'"
 $MARKER_END
@@ -123,6 +123,16 @@ ALIASES
 setup_aliases "$HOME/.bashrc"
 setup_aliases "$HOME/.zshrc"
 info "Aliases atualizados no .bashrc e .zshrc."
+
+echo -e "\n${BOLD}${YELLOW}=== Configuração Adicional de Sudo ===${NC}"
+echo "Para evitar que o comando 'snx-rs' solicite sua senha do sudo repetidamente,"
+echo "é altamente recomendável configurar o 'NOPASSWD' no seu arquivo sudoers."
+echo "Execute o seguinte comando para editar o arquivo sudoers com segurança:"
+echo "  ${GREEN}sudo visudo${NC}"
+echo "Adicione a seguinte linha no final do arquivo, substituindo 'SEU_USUARIO' pelo seu nome de usuário:"
+SNX_RS_PATH=$(command -v snx-rs || echo "/usr/bin/snx-rs")
+echo "  ${GREEN}SEU_USUARIO ALL=(ALL) NOPASSWD: ${SNX_RS_PATH}${NC}"
+echo "Salve e saia do editor. Isso permitirá que o 'snx-rs' seja executado via aliases sem pedir a senha."
 
 # --- 6. Reiniciar Monitor ---
 nohup "$LOCAL_BIN/vpn-tray" > /dev/null 2>&1 &
