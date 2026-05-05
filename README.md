@@ -1,61 +1,80 @@
 # vpn-egsys
 
-Monitor de bandeja e utilitário de configuração para VPN Check Point utilizando `snx-rs`.
+Monitor de bandeja e gerenciador de VPN Check Point via `snx-rs`.
 
 ## Sistemas Suportados
 
-- **Sistemas baseados em Debian/Ubuntu** (Ubuntu, Debian, Zorin OS, etc.)
-- **Sistemas baseados em Arch Linux** (Arch, CachyOS, EndeavourOS, etc.)
+- **Debian/Ubuntu** (Ubuntu, Debian, Zorin OS, Linux Mint, Pop!_OS, etc.)
+- **Arch Linux** (Arch, CachyOS, EndeavourOS, Manjaro, etc.)
+- **Fedora/RHEL** (Fedora, CentOS, Rocky, etc.)
 - Arquitetura: x86_64
 
 ## Características
 
-- Interface na bandeja do sistema para conectar/desconectar.
-- Ícones de status (conectado/desconectado).
-- Aliases de terminal para conexão rápida.
-- Configuração automática e unificada de credenciais (RO, PR e AM).
-- Detecção automática de sistema operacional para instalação de dependências.
-- Gerenciamento inteligente de processos para evitar conflitos.
-- Autostart com o sistema.
+- Descoberta dinâmica de VPNs — adicione quantas quiser, o sistema se adapta
+- Interface na bandeja do sistema (tray) com status em tempo real
+- Aliases de terminal gerados automaticamente para cada VPN configurada
+- Configuração automática de `sudoers.d` — sem edição manual, sem senha repetida
+- Gerenciador interativo para listar, adicionar, atualizar e remover VPNs
+- Preserva configurações existentes — nunca sobrescreve sem confirmação
+- Autostart com o sistema
+- Suporte a bash e zsh
 
 ## Instalação
 
 ```bash
 git clone https://github.com/andreprado-egsys/vpn-egsys.git
 cd vpn-egsys
-chmod +x install.sh
 ./install.sh
 ```
-**Atenção:** Após a instalação, para que os comandos da VPN funcionem sem pedir sua senha do `sudo` repetidamente (o que é exigido pois `snx-rs` roda como root), é **altamente recomendável** configurar o `NOPASSWD` no seu arquivo `sudoers`. O script de instalação exibirá as instruções exatas. Você pode fazer isso executando `sudo visudo` e adicionando uma linha como:
-`SEU_USUARIO ALL=(ALL) NOPASSWD: /caminho/do/snx-rs` (o caminho exato será exibido pelo script).
+
+O instalador:
+1. Detecta sua distro e instala dependências
+2. Instala o `snx-rs` se necessário
+3. Configura `/etc/sudoers.d/vpn-egsys` automaticamente (sem precisar editar manualmente)
+4. Pergunta credenciais apenas para VPNs ainda não configuradas
+5. Gera aliases dinâmicos e inicia o monitor de bandeja
 
 ## Uso via Terminal
 
-Após a instalação, você pode usar os seguintes comandos (eles serão executados com privilégios de root via `sudo`):
+Os aliases são gerados dinamicamente com base nas VPNs configuradas:
 
-- `vpnro`: Conecta à VPN Rondônia.
-- `vpnpr`: Conecta à VPN Paraná.
-- `vpnam`: Conecta à VPN Amazonas.
-- `vpnoff`: Desconecta a VPN ativa e encerra processos `snx-rs` (requer `sudo`).
-- `vpnstatus`: Verifica o status da interface de rede e logs da conexão.
+- `vpnro` — Conecta à VPN Rondônia
+- `vpnpr` — Conecta à VPN Paraná
+- `vpnam` — Conecta à VPN Amazonas
+- `vpnoff` — Desconecta a VPN ativa
+- `vpnstatus` — Verifica status da conexão
 
-## Atualização e Configuração
+Novos aliases são criados automaticamente ao adicionar VPNs via `update.sh`.
 
-Se você já possui a aplicação instalada e deseja adicionar uma nova VPN (como a de AM) ou atualizar suas credenciais existentes de forma segura:
+## Gerenciamento de VPNs
 
 ```bash
-git pull
-chmod +x update.sh
 ./update.sh
 ```
-**Atenção:** Similar à instalação, o script de atualização também exibirá as instruções para configurar o `NOPASSWD` no seu `sudoers`, caso ainda não o tenha feito.
 
-O script `update.sh` encerra a aplicação ativa, valida dependências do sistema e permite configurar ou atualizar as credenciais de todas as VPNs suportadas.
+Menu interativo com opções:
+1. **Listar** VPNs configuradas
+2. **Adicionar** nova VPN
+3. **Atualizar** credenciais de VPN existente
+4. **Remover** VPN
+5. **Regenerar** aliases
+6. **Atualizar** vpn-tray
+
+Também aceita argumentos diretos: `./update.sh listar`, `./update.sh adicionar`, etc.
+
+## Desinstalação
+
+```bash
+./uninstall.sh
+```
+
+Remove binários, aliases, sudoers e autostart. Pergunta antes de apagar configurações de VPN.
 
 ## Dependências
 
-O instalador cuida de tudo, mas os componentes principais são:
+Instaladas automaticamente pelo `install.sh`:
 - `snx-rs` (v5.2.3+)
-- `python3-gi` (PyGObject)
-- `libayatana-appindicator-glib`
-- `webkit2gtk` (para autenticação web se necessário)
+- `python3-gi` / `python-gobject`
+- `libayatana-appindicator`
+- `webkit2gtk`
