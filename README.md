@@ -1,32 +1,24 @@
 # vpn-egsys v2
 
-Monitor de bandeja, integração NetworkManager e utilitário de configuração para VPN Check Point utilizando `snx-rs`.
+Monitor de bandeja, integração snxctl e utilitário de configuração para VPN Check Point utilizando `snx-rs`.
 
 ## Novidades v2
 
-- **Integração com NetworkManager** — VPNs aparecem no applet do NM (GNOME, KDE, etc.)
-- **Conexão síncrona** — sem delay de rotas/DNS; o sistema só reporta "conectado" quando tudo está pronto
 - **snx-rs em command mode** — roda como serviço systemd com restart automático
 - **snxctl** — controle confiável via `snxctl connect/disconnect/status`
+- **Conexão síncrona** — sem delay de rotas/DNS; só reporta "conectado" quando tudo está pronto
+- **VPN Tray** — ícone na bandeja com menu para conectar/desconectar/configurar
+- **Descoberta dinâmica** — detecta automaticamente todas as VPNs configuradas
+- **Multi-distro** — Ubuntu, Debian, Zorin, Mint, Pop, Arch, CachyOS, EndeavourOS, Manjaro
 
 ## Sistemas Suportados
 
-- **Debian/Ubuntu** (Ubuntu, Debian, Zorin OS, etc.)
-- **Arch Linux** (Arch, CachyOS, EndeavourOS, etc.)
+- **Debian/Ubuntu** (Ubuntu, Debian, Zorin OS, Linux Mint, Pop!_OS)
+- **Arch Linux** (Arch, CachyOS, EndeavourOS, Manjaro)
+- **Desktop**: GNOME, KDE Plasma, XFCE
 - Arquitetura: x86_64
 
-## Características
-
-- VPNs visíveis no NetworkManager (applet do sistema)
-- Interface na bandeja do sistema para conectar/desconectar
-- Ícones de status (conectado/desconectado)
-- Aliases de terminal com feedback síncrono
-- Configuração automática de credenciais (RO, PR e AM)
-- Detecção automática de SO para instalação de dependências
-- Serviço systemd com restart automático
-- Autostart com o sistema
-
-## Instalação (nova)
+## Instalação (PC novo)
 
 ```bash
 git clone https://github.com/andreprado-egsys/vpn-egsys.git
@@ -35,45 +27,56 @@ chmod +x install.sh
 ./install.sh
 ```
 
+O instalador:
+1. Detecta o SO e instala dependências
+2. Instala snx-rs (se necessário)
+3. Configura serviço systemd
+4. Pergunta credenciais das VPNs (RO, PR, AM + opção de adicionar outras)
+5. Cria aliases no terminal
+6. Instala VPN Tray com autostart
+7. No GNOME: instala extensão AppIndicator
+
 ## Atualização (PCs com versão anterior)
 
 ```bash
 cd vpn-egsys
 git pull
-chmod +x update.sh
 ./update.sh
 ```
 
-O `update.sh` migra automaticamente da arquitetura antiga (standalone) para a nova (command mode + NM).
+O `update.sh` migra automaticamente da arquitetura antiga (standalone) para a nova (command mode).
 
 ## Uso
 
-### Via NetworkManager (novo!)
+### Via VPN Tray (recomendado)
 
-As VPNs aparecem no applet do NetworkManager. Basta clicar para conectar/desconectar.
+O ícone na bandeja do sistema permite:
+- **Conectar** qualquer VPN configurada
+- **Desconectar** a VPN ativa
+- **⚙ Configurar VPNs** — adicionar ou remover VPNs
 
 ### Via Terminal
 
-- `vpnro` — Conecta à VPN Rondônia (aguarda confirmação)
-- `vpnpr` — Conecta à VPN Paraná (aguarda confirmação)
-- `vpnam` — Conecta à VPN Amazonas (aguarda confirmação)
+Aliases gerados automaticamente para cada VPN configurada:
+- `vpnro` — Conecta à VPN Rondônia
+- `vpnpr` — Conecta à VPN Paraná
+- `vpnam` — Conecta à VPN Amazonas
 - `vpnoff` — Desconecta a VPN ativa
-- `vpnstatus` — Status detalhado da conexão via snxctl
+- `vpnstatus` — Status detalhado da conexão
 
-### Via Tray Icon
+### Via SAPA (egsys-tool)
 
-O ícone na bandeja permite conectar/desconectar com um clique.
+A SAPA verifica automaticamente se a VPN necessária está conectada:
+- Se estiver → libera acesso
+- Se não estiver → solicita que o usuário conecte pelo VPN Tray
 
 ## Arquitetura v2
 
 ```
-NetworkManager (applet)
-       │
-       ▼
-NM Dispatcher (99-snx-vpn.sh)
-       │
-       ▼
-snxctl connect/disconnect
+VPN Tray (bandeja)          Terminal (aliases)
+       │                           │
+       ▼                           ▼
+   snxctl connect/disconnect/status
        │
        ▼
 snx-rs (systemd service, -m command)
@@ -82,18 +85,56 @@ snx-rs (systemd service, -m command)
 Interface snx-xfrm + Rotas + DNS ✓
 ```
 
+## Adicionar nova VPN
+
+### Via VPN Tray
+Menu → ⚙ Configurar VPNs → Adicionar
+
+### Via Terminal
+Crie o arquivo `~/.config/snx-rs/vpnXX.conf`:
+```
+server-name=SERVIDOR
+user-name=USUARIO
+password=SENHA_EM_BASE64
+ignore-server-cert=true
+login-type=vpn
+```
+
+Depois rode `./update.sh` para gerar aliases e conexões NM.
+
 ## Dependências
 
 Instaladas automaticamente:
-- `snx-rs` v6.0.6+ (com `snxctl`)
+- `snx-rs` v5.x+ (com `snxctl`)
 - `python3-gi` (PyGObject)
 - `libayatana-appindicator`
 - `networkmanager`
-- `webkit2gtk`
+- `gnome-shell-extension-appindicator` (apenas GNOME)
 
 ## Desinstalação
 
 ```bash
 chmod +x uninstall.sh
 ./uninstall.sh
+```
+
+## Troubleshooting
+
+### VPN Tray não aparece (GNOME)
+```bash
+sudo apt install gnome-shell-extension-appindicator
+gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com
+```
+Reinicie a sessão (logout/login).
+
+### snxctl não conecta
+```bash
+systemctl status snx-rs.service   # Verificar se o serviço está ativo
+snxctl status                      # Ver estado atual
+```
+
+### Timeout na conexão
+Verifique se o servidor está acessível:
+```bash
+snx-rs -m info -s SERVIDOR -X true
 ```
