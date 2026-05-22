@@ -1,53 +1,40 @@
 #!/bin/bash
+# vpn-egsys - Desinstalador completo
+
 set -e
 
-BOLD='\033[1m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-echo -e "${BOLD}vpn-egsys - Desinstalação${NC}\n"
+echo "=== Desinstalando vpn-egsys ==="
 
 # Parar processos
 killall vpn-tray 2>/dev/null || true
-killall snx-rs 2>/dev/null || true
-sudo rm -f /run/snx-rs.lock 2>/dev/null || true
+sudo systemctl stop snx-rs.service 2>/dev/null || true
+sudo systemctl disable snx-rs.service 2>/dev/null || true
+
+# Remover systemd service
+sudo rm -f /etc/systemd/system/snx-rs.service
+sudo systemctl daemon-reload
+
+# Remover NM dispatcher
+sudo rm -f /etc/NetworkManager/dispatcher.d/99-snx-vpn.sh
+
+# Remover conexões NM dummy
+nmcli connection delete "VPN RO - Rondônia" 2>/dev/null || true
+nmcli connection delete "VPN PR - Paraná" 2>/dev/null || true
+nmcli connection delete "VPN AM - Amazonas" 2>/dev/null || true
 
 # Remover binários e ícones
-rm -f ~/.local/bin/vpn-tray
-rm -f ~/.local/share/applications/vpn-egsys.desktop
-rm -f ~/.config/autostart/vpn-tray.desktop
-rm -rf ~/.local/share/icons/vpn-egsys
+rm -f "$HOME/.local/bin/vpn-tray"
+rm -rf "$HOME/.local/share/icons/vpn-egsys"
+rm -f "$HOME/.local/share/applications/vpn-egsys.desktop"
+rm -f "$HOME/.config/autostart/vpn-tray.desktop"
 
-# Remover sudoers
-if [ -f /etc/sudoers.d/vpn-egsys ]; then
-    sudo rm -f /etc/sudoers.d/vpn-egsys
-    echo -e "${GREEN}[✓]${NC} Sudoers removido."
-fi
-
-# Remover aliases do bashrc e zshrc
-MARKER="# >>> vpn-egsys >>>"
-MARKER_END="# <<< vpn-egsys <<<"
-for rc in ~/.bashrc ~/.zshrc; do
-    if [ -f "$rc" ] && grep -q "$MARKER" "$rc" 2>/dev/null; then
-        sed -i "/${MARKER//\//\\/}/,/${MARKER_END//\//\\/}/d" "$rc"
-        echo -e "${GREEN}[✓]${NC} Aliases removidos de $(basename $rc)"
-    fi
+# Remover aliases
+for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    [ -f "$rc" ] && sed -i '/# >>> vpn-egsys >>>/,/# <<< vpn-egsys <<</d' "$rc"
 done
 
-update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
+# Remover lock
+sudo rm -f /run/snx-rs.lock
 
-# Perguntar sobre configs
-echo ""
-read -rp "Remover configurações de VPN (~/.config/snx-rs)? (s/N): " choice
-if [[ "$choice" == "s" || "$choice" == "S" ]]; then
-    rm -rf ~/.config/snx-rs
-    echo -e "${GREEN}[✓]${NC} Configurações removidas."
-else
-    echo -e "${YELLOW}[!]${NC} Configurações preservadas em ~/.config/snx-rs"
-fi
-
-echo -e "\n${GREEN}${BOLD}✓ vpn-egsys removido.${NC}"
-echo -e "  O pacote snx-rs NÃO foi removido. Para remover manualmente:"
-echo -e "    Arch: sudo pacman -R snx-rs"
-echo -e "    Debian/Ubuntu: sudo apt remove snx-rs\n"
+echo "[✓] vpn-egsys desinstalado."
+echo "Nota: credenciais em ~/.config/snx-rs/ e snx-rs binário foram preservados."

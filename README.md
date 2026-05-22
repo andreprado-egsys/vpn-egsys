@@ -1,80 +1,99 @@
-# vpn-egsys
+# vpn-egsys v2
 
-Monitor de bandeja e gerenciador de VPN Check Point via `snx-rs`.
+Monitor de bandeja, integração NetworkManager e utilitário de configuração para VPN Check Point utilizando `snx-rs`.
+
+## Novidades v2
+
+- **Integração com NetworkManager** — VPNs aparecem no applet do NM (GNOME, KDE, etc.)
+- **Conexão síncrona** — sem delay de rotas/DNS; o sistema só reporta "conectado" quando tudo está pronto
+- **snx-rs em command mode** — roda como serviço systemd com restart automático
+- **snxctl** — controle confiável via `snxctl connect/disconnect/status`
 
 ## Sistemas Suportados
 
-- **Debian/Ubuntu** (Ubuntu, Debian, Zorin OS, Linux Mint, Pop!_OS, etc.)
-- **Arch Linux** (Arch, CachyOS, EndeavourOS, Manjaro, etc.)
-- **Fedora/RHEL** (Fedora, CentOS, Rocky, etc.)
+- **Debian/Ubuntu** (Ubuntu, Debian, Zorin OS, etc.)
+- **Arch Linux** (Arch, CachyOS, EndeavourOS, etc.)
 - Arquitetura: x86_64
 
 ## Características
 
-- Descoberta dinâmica de VPNs — adicione quantas quiser, o sistema se adapta
-- Interface na bandeja do sistema (tray) com status em tempo real
-- Aliases de terminal gerados automaticamente para cada VPN configurada
-- Configuração automática de `sudoers.d` — sem edição manual, sem senha repetida
-- Gerenciador interativo para listar, adicionar, atualizar e remover VPNs
-- Preserva configurações existentes — nunca sobrescreve sem confirmação
+- VPNs visíveis no NetworkManager (applet do sistema)
+- Interface na bandeja do sistema para conectar/desconectar
+- Ícones de status (conectado/desconectado)
+- Aliases de terminal com feedback síncrono
+- Configuração automática de credenciais (RO, PR e AM)
+- Detecção automática de SO para instalação de dependências
+- Serviço systemd com restart automático
 - Autostart com o sistema
-- Suporte a bash e zsh
 
-## Instalação
+## Instalação (nova)
 
 ```bash
 git clone https://github.com/andreprado-egsys/vpn-egsys.git
 cd vpn-egsys
+chmod +x install.sh
 ./install.sh
 ```
 
-O instalador:
-1. Detecta sua distro e instala dependências
-2. Instala o `snx-rs` se necessário
-3. Configura `/etc/sudoers.d/vpn-egsys` automaticamente (sem precisar editar manualmente)
-4. Pergunta credenciais apenas para VPNs ainda não configuradas
-5. Gera aliases dinâmicos e inicia o monitor de bandeja
-
-## Uso via Terminal
-
-Os aliases são gerados dinamicamente com base nas VPNs configuradas:
-
-- `vpnro` — Conecta à VPN Rondônia
-- `vpnpr` — Conecta à VPN Paraná
-- `vpnam` — Conecta à VPN Amazonas
-- `vpnoff` — Desconecta a VPN ativa
-- `vpnstatus` — Verifica status da conexão
-
-Novos aliases são criados automaticamente ao adicionar VPNs via `update.sh`.
-
-## Gerenciamento de VPNs
+## Atualização (PCs com versão anterior)
 
 ```bash
+cd vpn-egsys
+git pull
+chmod +x update.sh
 ./update.sh
 ```
 
-Menu interativo com opções:
-1. **Listar** VPNs configuradas
-2. **Adicionar** nova VPN
-3. **Atualizar** credenciais de VPN existente
-4. **Remover** VPN
-5. **Regenerar** aliases
-6. **Atualizar** vpn-tray
+O `update.sh` migra automaticamente da arquitetura antiga (standalone) para a nova (command mode + NM).
 
-Também aceita argumentos diretos: `./update.sh listar`, `./update.sh adicionar`, etc.
+## Uso
+
+### Via NetworkManager (novo!)
+
+As VPNs aparecem no applet do NetworkManager. Basta clicar para conectar/desconectar.
+
+### Via Terminal
+
+- `vpnro` — Conecta à VPN Rondônia (aguarda confirmação)
+- `vpnpr` — Conecta à VPN Paraná (aguarda confirmação)
+- `vpnam` — Conecta à VPN Amazonas (aguarda confirmação)
+- `vpnoff` — Desconecta a VPN ativa
+- `vpnstatus` — Status detalhado da conexão via snxctl
+
+### Via Tray Icon
+
+O ícone na bandeja permite conectar/desconectar com um clique.
+
+## Arquitetura v2
+
+```
+NetworkManager (applet)
+       │
+       ▼
+NM Dispatcher (99-snx-vpn.sh)
+       │
+       ▼
+snxctl connect/disconnect
+       │
+       ▼
+snx-rs (systemd service, -m command)
+       │
+       ▼
+Interface snx-xfrm + Rotas + DNS ✓
+```
+
+## Dependências
+
+Instaladas automaticamente:
+- `snx-rs` v6.0.6+ (com `snxctl`)
+- `python3-gi` (PyGObject)
+- `libayatana-appindicator`
+- `networkmanager`
+- `webkit2gtk`
 
 ## Desinstalação
 
 ```bash
+chmod +x uninstall.sh
 ./uninstall.sh
 ```
-
-Remove binários, aliases, sudoers e autostart. Pergunta antes de apagar configurações de VPN.
-
-## Dependências
-
-Instaladas automaticamente pelo `install.sh`:
-- `snx-rs` (v5.2.3+)
-- `python3-gi` / `python-gobject`
-- `libayatana-appindicator`
-- `webkit2gtk`
