@@ -390,6 +390,48 @@ fi
 nohup "$LOCAL_BIN/vpn-tray" > /dev/null 2>&1 &
 info "Monitor da bandeja iniciado."
 
+# --- 16. Instalar para outros usuários do sistema ---
+echo ""
+read -rp "Deseja instalar o vpn-tray para outros usuários deste PC? (s/N): " MULTI_USER
+if [[ "$MULTI_USER" == "s" || "$MULTI_USER" == "S" ]]; then
+    echo -e "${BOLD}Usuários disponíveis:${NC}"
+    for user_home in /home/*; do
+        [ -d "$user_home" ] || continue
+        u=$(basename "$user_home")
+        [ "$u" = "$(whoami)" ] && continue
+        echo -e "  • $u"
+    done
+    echo ""
+    warn "Cada usuário pode rodar individualmente: ./user-setup.sh"
+    warn "Ou copie o vpn-tray para todos agora (credenciais serão configuradas por cada um)."
+    read -rp "Copiar vpn-tray para todos os usuários? (s/N): " COPY_ALL
+    if [[ "$COPY_ALL" == "s" || "$COPY_ALL" == "S" ]]; then
+        for user_home in /home/*; do
+            [ -d "$user_home" ] || continue
+            u=$(basename "$user_home")
+            [ "$u" = "$(whoami)" ] && continue
+            sudo -u "$u" mkdir -p "$user_home/.local/bin" "$user_home/.local/share/icons/vpn-egsys" "$user_home/.config/autostart" "$user_home/.local/share/applications"
+            sudo cp "$SCRIPT_DIR/vpn-tray" "$user_home/.local/bin/vpn-tray"
+            sudo chmod +x "$user_home/.local/bin/vpn-tray"
+            sudo cp "$SCRIPT_DIR/icons/"*.svg "$user_home/.local/share/icons/vpn-egsys/"
+            sudo chown -R "$u:$u" "$user_home/.local/bin/vpn-tray" "$user_home/.local/share/icons/vpn-egsys"
+            # Autostart
+            cat > /tmp/vpn-tray-desktop.tmp <<DESKTOP
+[Desktop Entry]
+Name=VPN Monitor
+Exec=$user_home/.local/bin/vpn-tray
+Terminal=false
+Type=Application
+Categories=Network;
+DESKTOP
+            sudo cp /tmp/vpn-tray-desktop.tmp "$user_home/.config/autostart/vpn-tray.desktop"
+            sudo chown "$u:$u" "$user_home/.config/autostart/vpn-tray.desktop"
+            info "vpn-tray instalado para $u (credenciais: $u deve rodar ./user-setup.sh)"
+        done
+        rm -f /tmp/vpn-tray-desktop.tmp
+    fi
+fi
+
 echo -e "\n${BOLD}${GREEN}=== Instalação v2 concluída com sucesso! ===${NC}"
-echo -e "${BOLD}As VPNs agora aparecem no NetworkManager.${NC}"
-echo -e "Use: applet NM, terminal (vpnro/vpnpr/vpnam) ou tray icon.\n"
+echo -e "${BOLD}VPN Tray instalado. Use o menu na bandeja para conectar.${NC}"
+echo -e "Outros usuários: rodem ${CYAN}./user-setup.sh${NC} para configurar credenciais.\n"
