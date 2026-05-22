@@ -186,9 +186,38 @@ EOF
     info "Credenciais $label atualizadas."
 }
 
-setup_vpn_config "vpnro" "VPN RO - Rondônia" "131.72.155.42"
-setup_vpn_config "vpnpr" "VPN PR - Paraná" "acessoremoto.pr.gov.br"
-setup_vpn_config "vpnam" "VPN AM - Amazonas" "sslvpn.prodam.am.gov.br"
+# Verifica se já existem configs
+EXISTING_VPNS=$(ls "$CONFIG_DIR"/vpn*.conf 2>/dev/null | wc -l)
+
+if [ "$EXISTING_VPNS" -gt 0 ]; then
+    info "VPNs configuradas ($EXISTING_VPNS):"
+    for conf in "$CONFIG_DIR"/vpn*.conf; do
+        local_name=$(basename "$conf" .conf)
+        local_server=$(grep "^server-name=" "$conf" | cut -d= -f2)
+        local_user=$(grep "^user-name=" "$conf" | cut -d= -f2)
+        echo -e "  • ${CYAN}${local_name}${NC} → ${local_server} (${local_user})"
+    done
+    echo ""
+    read -rp "Deseja modificar alguma credencial? (s/N): " MODIFY
+    if [[ "$MODIFY" == "s" || "$MODIFY" == "S" ]]; then
+        setup_vpn_config "vpnro" "VPN RO - Rondônia" "131.72.155.42"
+        setup_vpn_config "vpnpr" "VPN PR - Paraná" "acessoremoto.pr.gov.br"
+        setup_vpn_config "vpnam" "VPN AM - Amazonas" "sslvpn.prodam.am.gov.br"
+    fi
+    read -rp "Deseja adicionar outra VPN? (s/N): " ADD_MORE
+    if [[ "$ADD_MORE" == "s" || "$ADD_MORE" == "S" ]]; then
+        echo -e "\n${BOLD}Adicionar nova VPN${NC}"
+        read -rp "Identificador (ex: vpnsc, vpnto): " VPN_ID
+        if [ -n "$VPN_ID" ]; then
+            read -rp "Servidor (IP ou hostname): " VPN_SERVER
+            [ -n "$VPN_SERVER" ] && setup_vpn_config "$VPN_ID" "VPN ${VPN_ID#vpn}" "$VPN_SERVER"
+        fi
+    fi
+else
+    setup_vpn_config "vpnro" "VPN RO - Rondônia" "131.72.155.42"
+    setup_vpn_config "vpnpr" "VPN PR - Paraná" "acessoremoto.pr.gov.br"
+    setup_vpn_config "vpnam" "VPN AM - Amazonas" "sslvpn.prodam.am.gov.br"
+fi
 
 # --- 7. Instalar/atualizar systemd service ---
 warn "Configurando serviço systemd..."

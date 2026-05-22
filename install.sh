@@ -265,12 +265,31 @@ add_custom_vpn() {
 }
 
 echo -e "\n${BOLD}=== Configuração de Credenciais ===${NC}"
-echo -e "VPNs pré-configuradas:"
 
-# VPNs conhecidas
-setup_vpn_config "vpnro" "VPN RO - Rondônia" "131.72.155.42"
-setup_vpn_config "vpnpr" "VPN PR - Paraná" "acessoremoto.pr.gov.br"
-setup_vpn_config "vpnam" "VPN AM - Amazonas" "sslvpn.prodam.am.gov.br"
+# Verifica se já existem configs
+EXISTING_VPNS=$(ls "$CONFIG_DIR"/vpn*.conf 2>/dev/null | wc -l)
+
+if [ "$EXISTING_VPNS" -gt 0 ]; then
+    info "VPNs já configuradas:"
+    for conf in "$CONFIG_DIR"/vpn*.conf; do
+        local_name=$(basename "$conf" .conf)
+        local_server=$(grep "^server-name=" "$conf" | cut -d= -f2)
+        local_user=$(grep "^user-name=" "$conf" | cut -d= -f2)
+        echo -e "  • ${CYAN}${local_name}${NC} → ${local_server} (${local_user})"
+    done
+    echo ""
+    read -rp "Deseja modificar alguma credencial existente? (s/N): " MODIFY
+    if [[ "$MODIFY" == "s" || "$MODIFY" == "S" ]]; then
+        setup_vpn_config "vpnro" "VPN RO - Rondônia" "131.72.155.42"
+        setup_vpn_config "vpnpr" "VPN PR - Paraná" "acessoremoto.pr.gov.br"
+        setup_vpn_config "vpnam" "VPN AM - Amazonas" "sslvpn.prodam.am.gov.br"
+    fi
+else
+    # Primeira instalação - configura as VPNs padrão
+    setup_vpn_config "vpnro" "VPN RO - Rondônia" "131.72.155.42"
+    setup_vpn_config "vpnpr" "VPN PR - Paraná" "acessoremoto.pr.gov.br"
+    setup_vpn_config "vpnam" "VPN AM - Amazonas" "sslvpn.prodam.am.gov.br"
+fi
 
 # Permitir adicionar VPNs extras
 while true; do
