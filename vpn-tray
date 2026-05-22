@@ -214,6 +214,7 @@ class VPNTray:
             return
 
         import base64
+        os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
         pass_b64 = base64.b64encode(passwd.encode()).decode()
         conf_path = os.path.join(CONFIG_DIR, f'{vpn_id}.conf')
         with open(conf_path, 'w') as f:
