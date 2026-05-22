@@ -14,11 +14,32 @@ ICON_DIR = os.path.expanduser('~/.local/share/icons/vpn-egsys')
 CONFIG_DIR = os.path.expanduser('~/.config/snx-rs')
 
 # Mapa: id → (label NM, config file)
-CONFIGS = {
-    'vpnro': ('VPN RO - Rondônia', 'vpnro.conf'),
-    'vpnpr': ('VPN PR - Paraná', 'vpnpr.conf'),
-    'vpnam': ('VPN AM - Amazonas', 'vpnam.conf'),
+# Labels conhecidas
+KNOWN_LABELS = {
+    'vpnro': 'VPN RO - Rondônia',
+    'vpnpr': 'VPN PR - Paraná',
+    'vpnam': 'VPN AM - Amazonas',
+    'vpnmt': 'VPN MT - Mato Grosso',
+    'vpnsc': 'VPN SC - Santa Catarina',
+    'vpnto': 'VPN TO - Tocantins',
+    'vpnprgp': 'VPN PR GP',
 }
+
+
+def discover_vpns():
+    """Descobre VPNs configuradas em ~/.config/snx-rs/vpn*.conf"""
+    configs = {}
+    import glob
+    for conf in glob.glob(os.path.join(CONFIG_DIR, 'vpn*.conf')):
+        name = os.path.basename(conf).replace('.conf', '')
+        if name == 'snx-rs':
+            continue
+        label = KNOWN_LABELS.get(name, f'VPN {name[3:].upper()}')
+        configs[name] = (label, os.path.basename(conf))
+    return configs
+
+
+CONFIGS = discover_vpns()
 
 
 class VPNTray:

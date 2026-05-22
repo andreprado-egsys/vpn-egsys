@@ -225,10 +225,10 @@ setup_vpn_config() {
         read -rp "Já configurada. Deseja redefinir? (s/N): " choice
         [[ "$choice" != "s" && "$choice" != "S" ]] && return
     fi
-    read -rp "Usuário $name: " USER_INPUT
-    [ -z "$USER_INPUT" ] && warn "Pulando $label (usuário vazio)." && return
-    read -rsp "Senha $name: " PASS_INPUT; echo ""
-    [ -z "$PASS_INPUT" ] && warn "Pulando $label (senha vazia)." && return
+    read -rp "Usuário: " USER_INPUT
+    [ -z "$USER_INPUT" ] && warn "Pulando $label." && return
+    read -rsp "Senha: " PASS_INPUT; echo ""
+    [ -z "$PASS_INPUT" ] && warn "Pulando $label." && return
     PASS_B64=$(echo -n "$PASS_INPUT" | base64)
     mkdir -p "$CONFIG_DIR"
     cat > "$conf_file" <<EOF
@@ -239,12 +239,36 @@ ignore-server-cert=true
 login-type=vpn
 EOF
     chmod 600 "$conf_file"
+    info "$label configurada."
+}
+
+add_custom_vpn() {
+    echo -e "\n${BOLD}Adicionar nova VPN${NC}"
+    read -rp "Identificador (ex: vpnsc, vpnto, vpnmt): " VPN_ID
+    [ -z "$VPN_ID" ] && return
+    read -rp "Nome/Label (ex: VPN SC - Santa Catarina): " VPN_LABEL
+    [ -z "$VPN_LABEL" ] && return
+    read -rp "Servidor (IP ou hostname): " VPN_SERVER
+    [ -z "$VPN_SERVER" ] && return
+    setup_vpn_config "$VPN_ID" "$VPN_LABEL" "$VPN_SERVER"
 }
 
 echo -e "\n${BOLD}=== Configuração de Credenciais ===${NC}"
+echo -e "VPNs pré-configuradas:"
+
+# VPNs conhecidas
 setup_vpn_config "vpnro" "VPN RO - Rondônia" "131.72.155.42"
 setup_vpn_config "vpnpr" "VPN PR - Paraná" "acessoremoto.pr.gov.br"
 setup_vpn_config "vpnam" "VPN AM - Amazonas" "sslvpn.prodam.am.gov.br"
+
+# Permitir adicionar VPNs extras
+while true; do
+    echo ""
+    read -rp "Deseja adicionar outra VPN? (s/N): " ADD_MORE
+    [[ "$ADD_MORE" != "s" && "$ADD_MORE" != "S" ]] && break
+    add_custom_vpn
+done
+
 info "Configurações de credenciais finalizadas."
 
 # --- 8. Instalar systemd service ---
@@ -297,7 +321,7 @@ cp "$APPS_DIR/vpn-egsys.desktop" "$AUTOSTART_DIR/vpn-tray.desktop"
 update-desktop-database "$APPS_DIR" 2>/dev/null || true
 info "Atalhos de menu e autostart configurados."
 
-# --- 13. Aliases (snxctl-based, funções com wait síncrono) ---
+# --- 13. Aliases (dinâmicos baseados nos configs existentes) ---
 setup_aliases() {
     local shell_rc=$1
     [ ! -f "$shell_rc" ] && return
@@ -306,20 +330,23 @@ setup_aliases() {
     MARKER_END="# <<< vpn-egsys <<<"
     sed -i "/$MARKER/,/$MARKER_END/d" "$shell_rc" 2>/dev/null || true
 
-    cat >> "$shell_rc" <<'ALIASES'
-# >>> vpn-egsys >>>
-vpnro() { snxctl disconnect 2>/dev/null; sleep 1; cp ~/.config/snx-rs/vpnro.conf ~/.config/snx-rs/snx-rs.conf; snxctl connect 2>&1; for i in $(seq 1 20); do snxctl status 2>/dev/null | grep -qiE "conectado desde|connected since" && echo "✓ VPN RO conectada" && return 0; sleep 1; done; echo "✗ Timeout - verifique: snxctl status"; }
-vpnpr() { snxctl disconnect 2>/dev/null; sleep 1; cp ~/.config/snx-rs/vpnpr.conf ~/.config/snx-rs/snx-rs.conf; snxctl connect 2>&1; for i in $(seq 1 20); do snxctl status 2>/dev/null | grep -qiE "conectado desde|connected since" && echo "✓ VPN PR conectada" && return 0; sleep 1; done; echo "✗ Timeout - verifique: snxctl status"; }
-vpnam() { snxctl disconnect 2>/dev/null; sleep 1; cp ~/.config/snx-rs/vpnam.conf ~/.config/snx-rs/snx-rs.conf; snxctl connect 2>&1; for i in $(seq 1 20); do snxctl status 2>/dev/null | grep -qiE "conectado desde|connected since" && echo "✓ VPN AM conectada" && return 0; sleep 1; done; echo "✗ Timeout - verifique: snxctl status"; }
-vpnoff() { snxctl disconnect 2>/dev/null; echo "VPN desconectada"; }
-vpnstatus() { snxctl status; }
-# <<< vpn-egsys <<<
-ALIASES
+    {
+        echo "$MARKER"
+        # Gera função para cada vpn*.conf
+        for conf in "$CONFIG_DIR"/vpn*.conf; do
+            [ -f "$conf" ] || continue
+            local name=$(basename "$conf" .conf)
+            echo "${name}() { snxctl disconnect 2>/dev/null; sleep 1; cp ~/.config/snx-rs/${name}.conf ~/.config/snx-rs/snx-rs.conf; snxctl connect 2>&1; for i in \$(seq 1 20); do snxctl status 2>/dev/null | grep -qiE \"conectado desde|connected since\" && echo \"✓ ${name} conectada\" && return 0; sleep 1; done; echo \"✗ Timeout\"; }"
+        done
+        echo 'vpnoff() { snxctl disconnect 2>/dev/null; echo "VPN desconectada"; }'
+        echo 'vpnstatus() { snxctl status; }'
+        echo "$MARKER_END"
+    } >> "$shell_rc"
 }
 
 setup_aliases "$HOME/.bashrc"
 setup_aliases "$HOME/.zshrc"
-info "Aliases atualizados (snxctl-based)."
+info "Aliases atualizados."
 
 # --- 14. Garantir ~/.local/bin no PATH ---
 if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
