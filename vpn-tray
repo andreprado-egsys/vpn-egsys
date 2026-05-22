@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""vpn-tray - Monitor de VPN snx-rs na bandeja do sistema (v2 - NM integrated)."""
+"""vpn-tray - Monitor de VPN snx-rs na bandeja do sistema."""
 
 import gi
 import subprocess
@@ -26,7 +26,6 @@ KNOWN_LABELS = {
 
 
 def discover_vpns():
-    """Descobre VPNs configuradas em ~/.config/snx-rs/vpn*.conf"""
     configs = {}
     for conf in sorted(glob.glob(os.path.join(CONFIG_DIR, 'vpn*.conf'))):
         name = os.path.basename(conf).replace('.conf', '')
@@ -114,15 +113,15 @@ class VPNTray:
         return True
 
     def on_connect(self, widget, key):
-        """Conecta via snxctl e ativa conexão NM."""
         label, conf_file = self.configs[key]
         conf_path = os.path.join(CONFIG_DIR, conf_file)
         snx_conf = os.path.join(CONFIG_DIR, 'snx-rs.conf')
 
-        # Desconecta VPN ativa
         subprocess.run(['snxctl', 'disconnect'], capture_output=True, timeout=5)
-
-        # Copia config e conecta
+        # Desativa dummies NM
+        for k, (lbl, _) in self.configs.items():
+            subprocess.run(['nmcli', 'connection', 'down', lbl],
+                          capture_output=True, timeout=3)
         try:
             with open(conf_path) as f:
                 content = f.read()
@@ -130,14 +129,11 @@ class VPNTray:
                 f.write(content)
         except Exception:
             pass
-
         subprocess.Popen(['snxctl', 'connect'])
-
-        # Ativa conexão NM para sincronizar applet
+        # Ativa dummy NM para mostrar como conectada no applet
         subprocess.Popen(['nmcli', 'connection', 'up', label])
 
     def on_disconnect(self, widget):
-        """Desconecta snxctl e desativa conexões NM."""
         subprocess.run(['snxctl', 'disconnect'], capture_output=True, timeout=5)
         for key, (label, _) in self.configs.items():
             subprocess.run(['nmcli', 'connection', 'down', label],
