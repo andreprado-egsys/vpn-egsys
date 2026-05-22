@@ -74,11 +74,9 @@ case "$ACTION" in
         $SNXCTL disconnect 2>/dev/null || true
         sleep 1
 
-        # Copia config para o local padrão do snx-rs command mode
-        USER_HOME=$(dirname "$(dirname "$(dirname "$CONF_FILE")")")
-        SNX_CONF="$USER_HOME/.config/snx-rs/snx-rs.conf"
-        cp "$CONF_FILE" "$SNX_CONF"
-        chown --reference="$CONF_FILE" "$SNX_CONF" 2>/dev/null || true
+        # Copia config para onde o snx-rs service (root) lê
+        mkdir -p /root/.config/snx-rs
+        cp "$CONF_FILE" /root/.config/snx-rs/snx-rs.conf
 
         log "Conectando via snxctl (config: $CONF_FILE)"
         $SNXCTL connect
@@ -86,7 +84,7 @@ case "$ACTION" in
         # Aguarda snxctl reportar connected (máx 25s)
         TIMEOUT=25
         for i in $(seq 1 $TIMEOUT); do
-            if $SNXCTL status 2>/dev/null | grep -qi "connected"; then
+            if $SNXCTL status 2>/dev/null | grep -qiE "conectado desde|connected since"; then
                 log "CONECTADO em ${i}s ($VPN_ID)"
                 exit 0
             fi

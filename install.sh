@@ -249,6 +249,7 @@ info "Configurações de credenciais finalizadas."
 
 # --- 8. Instalar systemd service ---
 warn "Configurando serviço snx-rs..."
+sudo mkdir -p /root/.config/snx-rs
 sudo cp "$SCRIPT_DIR/snx-rs.service" /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable snx-rs.service
@@ -307,9 +308,9 @@ setup_aliases() {
 
     cat >> "$shell_rc" <<'ALIASES'
 # >>> vpn-egsys >>>
-vpnro() { nmcli connection down "VPN RO - Rondônia" 2>/dev/null; nmcli connection down "VPN PR - Paraná" 2>/dev/null; nmcli connection down "VPN AM - Amazonas" 2>/dev/null; snxctl disconnect 2>/dev/null; sleep 1; cp ~/.config/snx-rs/vpnro.conf ~/.config/snx-rs/snx-rs.conf; nmcli connection up "VPN RO - Rondônia" 2>/dev/null & echo "Conectando VPN RO..."; for i in $(seq 1 20); do snxctl status 2>/dev/null | grep -qi connected && echo "✓ VPN RO conectada" && return 0; sleep 1; done; echo "✗ Timeout - verifique: snxctl status"; }
-vpnpr() { nmcli connection down "VPN RO - Rondônia" 2>/dev/null; nmcli connection down "VPN PR - Paraná" 2>/dev/null; nmcli connection down "VPN AM - Amazonas" 2>/dev/null; snxctl disconnect 2>/dev/null; sleep 1; cp ~/.config/snx-rs/vpnpr.conf ~/.config/snx-rs/snx-rs.conf; nmcli connection up "VPN PR - Paraná" 2>/dev/null & echo "Conectando VPN PR..."; for i in $(seq 1 20); do snxctl status 2>/dev/null | grep -qi connected && echo "✓ VPN PR conectada" && return 0; sleep 1; done; echo "✗ Timeout - verifique: snxctl status"; }
-vpnam() { nmcli connection down "VPN RO - Rondônia" 2>/dev/null; nmcli connection down "VPN PR - Paraná" 2>/dev/null; nmcli connection down "VPN AM - Amazonas" 2>/dev/null; snxctl disconnect 2>/dev/null; sleep 1; cp ~/.config/snx-rs/vpnam.conf ~/.config/snx-rs/snx-rs.conf; nmcli connection up "VPN AM - Amazonas" 2>/dev/null & echo "Conectando VPN AM..."; for i in $(seq 1 20); do snxctl status 2>/dev/null | grep -qi connected && echo "✓ VPN AM conectada" && return 0; sleep 1; done; echo "✗ Timeout - verifique: snxctl status"; }
+vpnro() { nmcli connection down "VPN RO - Rondônia" 2>/dev/null; nmcli connection down "VPN PR - Paraná" 2>/dev/null; nmcli connection down "VPN AM - Amazonas" 2>/dev/null; snxctl disconnect 2>/dev/null; sleep 1; sudo cp ~/.config/snx-rs/vpnro.conf /root/.config/snx-rs/snx-rs.conf; snxctl connect 2>&1; echo "Conectando VPN RO..."; for i in $(seq 1 20); do snxctl status 2>/dev/null | grep -qiE "conectado desde|connected since" && echo "✓ VPN RO conectada" && return 0; sleep 1; done; echo "✗ Timeout - verifique: snxctl status"; }
+vpnpr() { nmcli connection down "VPN RO - Rondônia" 2>/dev/null; nmcli connection down "VPN PR - Paraná" 2>/dev/null; nmcli connection down "VPN AM - Amazonas" 2>/dev/null; snxctl disconnect 2>/dev/null; sleep 1; sudo cp ~/.config/snx-rs/vpnpr.conf /root/.config/snx-rs/snx-rs.conf; snxctl connect 2>&1; echo "Conectando VPN PR..."; for i in $(seq 1 20); do snxctl status 2>/dev/null | grep -qiE "conectado desde|connected since" && echo "✓ VPN PR conectada" && return 0; sleep 1; done; echo "✗ Timeout - verifique: snxctl status"; }
+vpnam() { nmcli connection down "VPN RO - Rondônia" 2>/dev/null; nmcli connection down "VPN PR - Paraná" 2>/dev/null; nmcli connection down "VPN AM - Amazonas" 2>/dev/null; snxctl disconnect 2>/dev/null; sleep 1; sudo cp ~/.config/snx-rs/vpnam.conf /root/.config/snx-rs/snx-rs.conf; snxctl connect 2>&1; echo "Conectando VPN AM..."; for i in $(seq 1 20); do snxctl status 2>/dev/null | grep -qiE "conectado desde|connected since" && echo "✓ VPN AM conectada" && return 0; sleep 1; done; echo "✗ Timeout - verifique: snxctl status"; }
 vpnoff() { nmcli connection down "VPN RO - Rondônia" 2>/dev/null; nmcli connection down "VPN PR - Paraná" 2>/dev/null; nmcli connection down "VPN AM - Amazonas" 2>/dev/null; snxctl disconnect 2>/dev/null; echo "VPN desconectada"; }
 vpnstatus() { snxctl status; }
 # <<< vpn-egsys <<<

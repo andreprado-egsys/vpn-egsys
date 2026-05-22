@@ -70,7 +70,7 @@ class VPNTray:
             r = subprocess.run(['snxctl', 'status'],
                                capture_output=True, text=True, timeout=5)
             output = r.stdout.strip() if r.returncode == 0 else ""
-            if not output or "disconnected" in output.lower():
+            if not output or "desconectado" in output.lower() or "disconnected" in output.lower():
                 return None
         except Exception:
             return None
@@ -106,12 +106,21 @@ class VPNTray:
     def on_connect(self, widget, key):
         """Conecta via nmcli para manter NM sincronizado."""
         label = CONFIGS[key][0]
+        conf_file = CONFIGS[key][1]
+        conf_path = os.path.join(CONFIG_DIR, conf_file)
+
         # Desconecta qualquer VPN snx ativa no NM
         for k, (lbl, _) in CONFIGS.items():
             subprocess.run(['nmcli', 'connection', 'down', lbl],
                           capture_output=True, timeout=5)
-        # Ativa a conexão NM (dispatcher faz o snxctl connect)
-        subprocess.Popen(['nmcli', 'connection', 'up', label])
+        subprocess.run(['snxctl', 'disconnect'], capture_output=True, timeout=5)
+
+        # Copia config para /root/ (onde o service lê)
+        subprocess.run(['sudo', 'cp', conf_path, '/root/.config/snx-rs/snx-rs.conf'],
+                       capture_output=True, timeout=5)
+
+        # Conecta via snxctl
+        subprocess.Popen(['snxctl', 'connect'])
 
     def on_disconnect(self, widget):
         """Desconecta via nmcli + snxctl para garantir."""
