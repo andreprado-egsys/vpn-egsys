@@ -144,12 +144,12 @@ class VPNTray:
                           capture_output=True, timeout=3)
 
     def on_configure(self, widget):
-        """Abre janela para adicionar/remover VPNs."""
+        """Abre janela para adicionar/editar/remover VPNs."""
         dialog = Gtk.Dialog(title="Configurar VPNs", flags=0)
-        dialog.set_default_size(400, 300)
+        dialog.set_default_size(450, 400)
         box = dialog.get_content_area()
 
-        # Lista de VPNs existentes com botão remover
+        # Lista de VPNs existentes com botões editar/remover
         frame = Gtk.Frame(label="VPNs configuradas")
         listbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
         listbox.set_margin_top(10)
@@ -157,12 +157,18 @@ class VPNTray:
         listbox.set_margin_start(10)
         listbox.set_margin_end(10)
 
+        if not self.configs:
+            listbox.pack_start(Gtk.Label(label="Nenhuma VPN configurada"), False, False, 0)
+
         for key, (label, conf_file) in self.configs.items():
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-            row.pack_start(Gtk.Label(label=label, xalign=0), True, True, 0)
-            btn = Gtk.Button(label="Remover")
-            btn.connect('clicked', self.on_remove_vpn, key, dialog)
-            row.pack_end(btn, False, False, 0)
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+            row.pack_start(Gtk.Label(label=f"{label} ({key})", xalign=0), True, True, 0)
+            btn_edit = Gtk.Button(label="Editar")
+            btn_edit.connect('clicked', self.on_edit_vpn, key, dialog)
+            row.pack_end(btn_edit, False, False, 0)
+            btn_rm = Gtk.Button(label="Remover")
+            btn_rm.connect('clicked', self.on_remove_vpn, key, dialog)
+            row.pack_end(btn_rm, False, False, 0)
             listbox.pack_start(row, False, False, 0)
 
         frame.add(listbox)
@@ -176,12 +182,14 @@ class VPNTray:
         grid.set_margin_start(10)
         grid.set_margin_end(10)
 
-        grid.attach(Gtk.Label(label="ID (ex: vpnsc):", xalign=0), 0, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Estado (ex: ro, pr, am):", xalign=0), 0, 0, 1, 1)
         self.entry_id = Gtk.Entry()
+        self.entry_id.set_placeholder_text("ro, pr, am, sc, to, mt...")
         grid.attach(self.entry_id, 1, 0, 1, 1)
 
         grid.attach(Gtk.Label(label="Servidor:", xalign=0), 0, 1, 1, 1)
         self.entry_server = Gtk.Entry()
+        self.entry_server.set_placeholder_text("IP ou hostname")
         grid.attach(self.entry_server, 1, 1, 1, 1)
 
         grid.attach(Gtk.Label(label="Usuário:", xalign=0), 0, 2, 1, 1)
@@ -205,13 +213,17 @@ class VPNTray:
         dialog.destroy()
 
     def on_add_vpn(self, widget, dialog):
-        vpn_id = self.entry_id.get_text().strip()
+        raw_id = self.entry_id.get_text().strip().lower().replace(' ', '')
         server = self.entry_server.get_text().strip()
         user = self.entry_user.get_text().strip()
         passwd = self.entry_pass.get_text().strip()
 
-        if not all([vpn_id, server, user, passwd]):
+        if not all([raw_id, server, user, passwd]):
             return
+
+        # Garante formato vpnXX
+        vpn_id = raw_id if raw_id.startswith('vpn') else f'vpn{raw_id}'
+        vpn_id = ''.join(c for c in vpn_id if c.isalnum())
 
         import base64
         os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
@@ -225,10 +237,75 @@ class VPNTray:
             f.write('login-type=vpn\n')
         os.chmod(conf_path, 0o600)
 
-        # Recarrega e reconstrói menu
         self.configs = discover_vpns()
         self.build_menu()
         dialog.destroy()
+        self.on_configure(None)
+
+    def on_edit_vpn(self, widget, key, parent_dialog):
+        """Edita credenciais de uma VPN existente."""
+        conf_path = os.path.join(CONFIG_DIR, f'{key}.conf')
+        if not os.path.exists(conf_path):
+            return
+
+        # Lê valores atuais
+        current = {}
+        with open(conf_path) as f:
+            for line in f:
+                if '=' in line:
+                    k, v = line.strip().split('=', 1)
+                    current[k] = v
+
+        dialog = Gtk.Dialog(title=f"Editar {key}", flags=0)
+        dialog.set_default_size(350, 200)
+        box = dialog.get_content_area()
+        grid = Gtk.Grid(column_spacing=10, row_spacing=5)
+        grid.set_margin_top(10)
+        grid.set_margin_bottom(10)
+        grid.set_margin_start(10)
+        grid.set_margin_end(10)
+
+        grid.attach(Gtk.Label(label="Servidor:", xalign=0), 0, 0, 1, 1)
+        entry_srv = Gtk.Entry()
+        entry_srv.set_text(current.get('server-name', ''))
+        grid.attach(entry_srv, 1, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Usuário:", xalign=0), 0, 1, 1, 1)
+        entry_usr = Gtk.Entry()
+        entry_usr.set_text(current.get('user-name', ''))
+        grid.attach(entry_usr, 1, 1, 1, 1)
+
+        grid.attach(Gtk.Label(label="Senha (nova):", xalign=0), 0, 2, 1, 1)
+        entry_pwd = Gtk.Entry()
+        entry_pwd.set_visibility(False)
+        entry_pwd.set_placeholder_text("deixe vazio para manter")
+        grid.attach(entry_pwd, 1, 2, 1, 1)
+
+        box.add(grid)
+        dialog.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Salvar", Gtk.ResponseType.OK)
+        dialog.show_all()
+
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            import base64
+            server = entry_srv.get_text().strip() or current.get('server-name', '')
+            user = entry_usr.get_text().strip() or current.get('user-name', '')
+            new_pass = entry_pwd.get_text().strip()
+            pass_b64 = base64.b64encode(new_pass.encode()).decode() if new_pass else current.get('password', '')
+
+            with open(conf_path, 'w') as f:
+                f.write(f'server-name={server}\n')
+                f.write(f'user-name={user}\n')
+                f.write(f'password={pass_b64}\n')
+                f.write('ignore-server-cert=true\n')
+                f.write('login-type=vpn\n')
+            os.chmod(conf_path, 0o600)
+
+        dialog.destroy()
+        parent_dialog.destroy()
+        self.configs = discover_vpns()
+        self.build_menu()
         self.on_configure(None)
 
     def on_remove_vpn(self, widget, key, dialog):
