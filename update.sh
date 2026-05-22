@@ -147,6 +147,18 @@ elif [ "$PKG_MANAGER" == "pacman" ]; then
 fi
 info "Dependências OK."
 
+# --- 5b. Extensão AppIndicator para GNOME (tray icon) ---
+if [ "$XDG_CURRENT_DESKTOP" = "GNOME" ] || [ "$XDG_CURRENT_DESKTOP" = "ubuntu:GNOME" ]; then
+    warn "GNOME detectado - verificando suporte a tray icon..."
+    if [ "$PKG_MANAGER" == "apt" ]; then
+        sudo apt install -y gnome-shell-extension-appindicator 2>/dev/null || true
+    elif [ "$PKG_MANAGER" == "pacman" ]; then
+        sudo pacman -S --noconfirm --needed gnome-shell-extension-appindicator 2>/dev/null || true
+    fi
+    gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com 2>/dev/null || true
+    info "Extensão AppIndicator OK."
+fi
+
 # --- 6. Configurar credenciais (opcional) ---
 setup_vpn_config() {
     local name=$1 label=$2 server=$3

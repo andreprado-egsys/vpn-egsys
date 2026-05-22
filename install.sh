@@ -185,7 +185,18 @@ elif [ "$PKG_MANAGER" == "pacman" ]; then
 fi
 info "Dependências instaladas."
 
-# --- 5. Permissões SUID ---
+# --- 4b. Extensão AppIndicator para GNOME (tray icon) ---
+if [ "$XDG_CURRENT_DESKTOP" = "GNOME" ] || [ "$XDG_CURRENT_DESKTOP" = "ubuntu:GNOME" ]; then
+    warn "GNOME detectado - instalando suporte a tray icon..."
+    if [ "$PKG_MANAGER" == "apt" ]; then
+        sudo apt install -y gnome-shell-extension-appindicator 2>/dev/null || true
+    elif [ "$PKG_MANAGER" == "pacman" ]; then
+        sudo pacman -S --noconfirm --needed gnome-shell-extension-appindicator 2>/dev/null || true
+    fi
+    # Ativa a extensão
+    gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com 2>/dev/null || true
+    info "Extensão AppIndicator instalada. Pode ser necessário reiniciar a sessão GNOME."
+fi
 for bin in /usr/bin/snx-rs /usr/bin/snxctl; do
     if [ -f "$bin" ]; then
         sudo chown root:root "$bin"
