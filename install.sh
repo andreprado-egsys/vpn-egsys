@@ -30,7 +30,20 @@ echo "║   Integração NetworkManager         ║"
 echo "╚══════════════════════════════════════╝"
 echo -e "${NC}"
 
-# --- 0. Preparação ---
+# --- 0. Obter privilégios sudo (janela gráfica se disponível) ---
+if ! sudo -n true 2>/dev/null; then
+    if command -v zenity &>/dev/null && [ -n "$DISPLAY" ]; then
+        PASSWD=$(zenity --password --title="vpn-egsys - Senha de administrador" \
+            --text="Digite a senha sudo para continuar a instalação:" 2>/dev/null) || error "Cancelado pelo usuário."
+        echo "$PASSWD" | sudo -S true 2>/dev/null || error "Senha incorreta."
+        unset PASSWD
+    else
+        sudo -v || error "Falha na autenticação sudo."
+    fi
+fi
+info "Privilégios de administrador obtidos."
+
+# --- 1. Preparação ---
 warn "Preparando o ambiente..."
 killall vpn-tray 2>/dev/null || true
 killall snx-rs 2>/dev/null || true
