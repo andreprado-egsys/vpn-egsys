@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""vpn-tray - Monitor de VPN snx-rs na bandeja do sistema."""
+"""vpn-tray - Monitor de VPN snx-rs na bandeja do sistema (v2 - snxctl)."""
 
 import gi
 import subprocess
 import os
 import signal
+import json
 
 gi.require_version('Gtk', '3.0')
 gi.require_version('AyatanaAppIndicator3', '0.1')
 from gi.repository import Gtk, AyatanaAppIndicator3, GLib
 
 ICON_DIR = os.path.expanduser('~/.local/share/icons/vpn-egsys')
-ICON_ON = os.path.join(ICON_DIR, 'vpn-connected')
-ICON_OFF = os.path.join(ICON_DIR, 'vpn-disconnected')
+CONFIG_DIR = os.path.expanduser('~/.config/snx-rs')
 
 CONFIGS = {
-    'vpnro': ('VPN RO - Rondônia', os.path.expanduser('~/.config/snx-rs/vpnro.conf')),
-    'vpnpr': ('VPN PR - Paraná', os.path.expanduser('~/.config/snx-rs/vpnpr.conf')),
-    'vpnam': ('VPN AM - Amazonas', os.path.expanduser('~/.config/snx-rs/vpnam.conf')),
+    'vpnro': ('VPN RO - Rondônia', 'vpnro.conf'),
+    'vpnpr': ('VPN PR - Paraná', 'vpnpr.conf'),
+    'vpnam': ('VPN AM - Amazonas', 'vpnam.conf'),
 }
 
 
@@ -42,6 +42,9 @@ class VPNTray:
         menu.append(Gtk.SeparatorMenuItem())
 
         for key, (name, _) in CONFIGS.items():
+            conf_path = os.path.join(CONFIG_DIR, CONFIGS[key][1])
+            if not os.path.exists(conf_path):
+                continue
             item = Gtk.MenuItem(label=f'Conectar {name}')
             item.connect('activate', self.on_connect, key)
             menu.append(item)
@@ -61,30 +64,42 @@ class VPNTray:
         menu.show_all()
         self.indicator.set_menu(menu)
 
-    def get_active_vpn(self):
+    def get_snxctl_status(self):
+        """Consulta snxctl status para saber se está conectado."""
         try:
-            r = subprocess.run(['ip', 'link', 'show', 'snx-xfrm'],
-                               capture_output=True, text=True, timeout=3)
-            if r.returncode != 0:
-                return None
-            ps = subprocess.run(['ps', 'aux'], capture_output=True, text=True, timeout=3)
-            for key, (name, conf) in CONFIGS.items():
-                if conf in ps.stdout:
-                    return name
-            conf_path = os.path.expanduser('~/.config/snx-rs/snx-rs.conf')
-            if os.path.exists(conf_path):
-                with open(conf_path) as f:
-                    content = f.read()
-                for key, (name, _) in CONFIGS.items():
-                    with open(CONFIGS[key][1]) as f2:
-                        if f2.read().strip() == content.strip():
-                            return name
-            return 'VPN Conectada'
+            r = subprocess.run(['snxctl', 'status'],
+                               capture_output=True, text=True, timeout=5)
+            return r.stdout.strip() if r.returncode == 0 else ""
         except Exception:
+            return ""
+
+    def get_active_vpn_name(self):
+        """Identifica qual VPN está ativa baseado no config atual."""
+        status = self.get_snxctl_status()
+        if not status or "disconnected" in status.lower():
             return None
 
+        # Verifica qual config está ativa comparando com snx-rs.conf
+        active_conf = os.path.join(CONFIG_DIR, 'snx-rs.conf')
+        if not os.path.exists(active_conf):
+            return 'VPN Conectada'
+
+        try:
+            with open(active_conf) as f:
+                active_content = f.read().strip()
+            for key, (name, conf_file) in CONFIGS.items():
+                conf_path = os.path.join(CONFIG_DIR, conf_file)
+                if os.path.exists(conf_path):
+                    with open(conf_path) as f:
+                        if f.read().strip() == active_content:
+                            return name
+        except Exception:
+            pass
+
+        return 'VPN Conectada'
+
     def check_status(self):
-        vpn = self.get_active_vpn()
+        vpn = self.get_active_vpn_name()
         if vpn:
             self.indicator.set_icon_full('vpn-connected', f'Conectado: {vpn}')
             self.indicator.set_title(f'VPN: {vpn}')
@@ -96,15 +111,27 @@ class VPNTray:
         return True
 
     def on_connect(self, widget, key):
-        _, conf = CONFIGS[key]
-        subprocess.Popen(['bash', '-c',
-            f'killall snx-rs 2>/dev/null; rm -f /run/snx-rs.lock 2>/dev/null; sleep 1; '
-            f'cp {conf} ~/.config/snx-rs/snx-rs.conf; '
-            f'nohup snx-rs -m standalone -c {conf} -l info > /tmp/snx-rs.log 2>&1 &'])
+        _, conf_file = CONFIGS[key]
+        conf_path = os.path.join(CONFIG_DIR, conf_file)
+        snx_conf = os.path.join(CONFIG_DIR, 'snx-rs.conf')
+
+        # Desconecta VPN ativa
+        subprocess.run(['snxctl', 'disconnect'], capture_output=True, timeout=5)
+
+        # Copia config desejada para snx-rs.conf (usado pelo command mode)
+        try:
+            with open(conf_path) as f:
+                content = f.read()
+            with open(snx_conf, 'w') as f:
+                f.write(content)
+        except Exception:
+            pass
+
+        # Conecta via snxctl
+        subprocess.Popen(['snxctl', 'connect'])
 
     def on_disconnect(self, widget):
-        subprocess.Popen(['bash', '-c',
-            'killall snx-rs 2>/dev/null; rm -f /run/snx-rs.lock 2>/dev/null'])
+        subprocess.Popen(['snxctl', 'disconnect'])
 
     def on_quit(self, widget):
         Gtk.main_quit()

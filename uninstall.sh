@@ -1,26 +1,40 @@
 #!/bin/bash
+# vpn-egsys - Desinstalador completo
+
 set -e
 
-echo "Desinstalando vpn-egsys..."
+echo "=== Desinstalando vpn-egsys ==="
 
-killall snx-rs 2>/dev/null || true
+# Parar processos
 killall vpn-tray 2>/dev/null || true
-rm -f /run/snx-rs.lock 2>/dev/null || true
+sudo systemctl stop snx-rs.service 2>/dev/null || true
+sudo systemctl disable snx-rs.service 2>/dev/null || true
 
-rm -f ~/.local/bin/vpn-tray
-rm -f ~/.local/bin/update.sh
-rm -f ~/.local/share/applications/vpn-egsys.desktop
-rm -f ~/.config/autostart/vpn-tray.desktop
-rm -rf ~/.local/share/icons/vpn-egsys
-rm -rf ~/.config/snx-rs
+# Remover systemd service
+sudo rm -f /etc/systemd/system/snx-rs.service
+sudo systemctl daemon-reload
 
-MARKER="# >>> vpn-egsys >>>"
-MARKER_END="# <<< vpn-egsys <<<"
-if grep -q "$MARKER" ~/.bashrc 2>/dev/null; then
-    sed -i "/$MARKER/,/$MARKER_END/d" ~/.bashrc
-fi
+# Remover NM dispatcher
+sudo rm -f /etc/NetworkManager/dispatcher.d/99-snx-vpn.sh
 
-update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
+# Remover conexões NM dummy
+nmcli connection delete "VPN RO - Rondônia" 2>/dev/null || true
+nmcli connection delete "VPN PR - Paraná" 2>/dev/null || true
+nmcli connection delete "VPN AM - Amazonas" 2>/dev/null || true
 
-echo "vpn-egsys removido."
-echo "O pacote snx-rs NÃO foi removido. Para remover: sudo apt remove snx-rs"
+# Remover binários e ícones
+rm -f "$HOME/.local/bin/vpn-tray"
+rm -rf "$HOME/.local/share/icons/vpn-egsys"
+rm -f "$HOME/.local/share/applications/vpn-egsys.desktop"
+rm -f "$HOME/.config/autostart/vpn-tray.desktop"
+
+# Remover aliases
+for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    [ -f "$rc" ] && sed -i '/# >>> vpn-egsys >>>/,/# <<< vpn-egsys <<</d' "$rc"
+done
+
+# Remover lock
+sudo rm -f /run/snx-rs.lock
+
+echo "[✓] vpn-egsys desinstalado."
+echo "Nota: credenciais em ~/.config/snx-rs/ e snx-rs binário foram preservados."
