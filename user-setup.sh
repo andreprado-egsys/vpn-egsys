@@ -68,12 +68,20 @@ setup_vpn_config() {
     [ -z "$PASS_INPUT" ] && warn "Pulando $label." && return
     PASS_B64=$(echo -n "$PASS_INPUT" | base64)
     mkdir -p "$CONFIG_DIR"
+
+    # Opções extras para VPNs instáveis (PRODAM/AM)
+    local extra_opts=""
+    if [[ "$name" == "vpnam" ]]; then
+        extra_opts="no-keepalive=true\nike-persist=true"
+    fi
+
     cat > "$conf_file" <<EOF
 server-name=$server
 user-name=${USER_INPUT}
 password=${PASS_B64}
 ignore-server-cert=true
 login-type=vpn
+${extra_opts}
 EOF
     chmod 600 "$conf_file"
     info "$label configurada."
