@@ -120,6 +120,18 @@ chmod +x uninstall.sh
 
 ## Troubleshooting
 
+### VPN PRODAM/AM desconecta após poucos segundos
+O gateway da PRODAM pode bloquear pacotes keepalive. A config `vpnam.conf` já inclui automaticamente:
+```
+no-keepalive=true
+ike-persist=true
+```
+Se já tinha a config antiga, aplique manualmente:
+```bash
+echo -e "no-keepalive=true\nike-persist=true" >> ~/.config/snx-rs/vpnam.conf
+```
+Se ainda não estabilizar, tente adicionar `tunnel-type=ssl` na config.
+
 ### VPN Tray não aparece (GNOME)
 ```bash
 sudo apt install gnome-shell-extension-appindicator
