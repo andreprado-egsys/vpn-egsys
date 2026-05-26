@@ -50,6 +50,24 @@ from gi.repository import Gtk, AyatanaAppIndicator3, GLib
 ICON_DIR = os.path.expanduser('~/.local/share/icons/vpn-egsys')
 CONFIG_DIR = os.path.expanduser('~/.config/snx-rs')
 
+# Ícones: usa do sistema (funciona em GNOME 46+), fallback para customizados
+ICON_CONNECTED = 'network-vpn'
+ICON_DISCONNECTED = 'network-vpn-disconnected'
+
+# Se os ícones do sistema não existirem, tenta usar os customizados
+def _check_system_icons():
+    global ICON_CONNECTED, ICON_DISCONNECTED
+    try:
+        import gi
+        gi.require_version('Gtk', '3.0')
+        from gi.repository import Gtk
+        theme = Gtk.IconTheme.get_default()
+        if not theme.has_icon('network-vpn'):
+            ICON_CONNECTED = 'vpn-connected'
+            ICON_DISCONNECTED = 'vpn-disconnected'
+    except Exception:
+        pass
+
 KNOWN_LABELS = {
     'vpnro': 'VPN RO - Rondônia',
     'vpnpr': 'VPN PR - Paraná',
@@ -72,9 +90,10 @@ def discover_vpns():
 
 class VPNTray:
     def __init__(self):
+        _check_system_icons()
         self.configs = discover_vpns()
         self.indicator = AyatanaAppIndicator3.Indicator.new_with_path(
-            'vpn-monitor', 'vpn-disconnected',
+            'vpn-monitor', ICON_DISCONNECTED,
             AyatanaAppIndicator3.IndicatorCategory.APPLICATION_STATUS,
             ICON_DIR)
         self.indicator.set_status(AyatanaAppIndicator3.IndicatorStatus.ACTIVE)
@@ -145,11 +164,11 @@ class VPNTray:
     def check_status(self):
         vpn = self.get_active_vpn_name()
         if vpn:
-            self.indicator.set_icon_full('vpn-connected', f'Conectado: {vpn}')
+            self.indicator.set_icon_full(ICON_CONNECTED, f'Conectado: {vpn}')
             self.indicator.set_title(f'VPN: {vpn}')
             self.status_item.set_label(f'✓ {vpn}')
         else:
-            self.indicator.set_icon_full('vpn-disconnected', 'Desconectado')
+            self.indicator.set_icon_full(ICON_DISCONNECTED, 'Desconectado')
             self.indicator.set_title('VPN Desconectada')
             self.status_item.set_label('✗ Desconectado')
         return True
