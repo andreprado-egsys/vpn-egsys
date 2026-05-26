@@ -261,17 +261,19 @@ setup_aliases() {
     MARKER_END="# <<< vpn-egsys <<<"
     sed -i "/$MARKER/,/$MARKER_END/d" "$shell_rc" 2>/dev/null || true
 
-    {
-        echo "$MARKER"
-        for conf in "$CONFIG_DIR"/vpn*.conf; do
-            [ -f "$conf" ] || continue
-            local name=$(basename "$conf" .conf)
-            echo "${name}() { snxctl disconnect 2>/dev/null; sleep 1; cp ~/.config/snx-rs/${name}.conf ~/.config/snx-rs/snx-rs.conf; snxctl connect 2>&1; for i in \$(seq 1 20); do snxctl status 2>/dev/null | grep -qiE \"conectado desde|connected since\" && echo \"✓ ${name} conectada\" && return 0; sleep 1; done; echo \"✗ Timeout\"; }"
-        done
-        echo 'vpnoff() { snxctl disconnect 2>/dev/null; echo "VPN desconectada"; }'
-        echo 'vpnstatus() { snxctl status; }'
-        echo "$MARKER_END"
-    } >> "$shell_rc"
+    echo "$MARKER" >> "$shell_rc"
+    for conf in "$CONFIG_DIR"/vpn*.conf; do
+        [ -f "$conf" ] || continue
+        local name=$(basename "$conf" .conf)
+        cat >> "$shell_rc" << FUNC
+${name}() { snxctl disconnect 2>/dev/null; sleep 1; cp ~/.config/snx-rs/${name}.conf ~/.config/snx-rs/snx-rs.conf; snxctl connect 2>&1; for i in \$(seq 1 20); do snxctl status 2>/dev/null | grep -qiE 'conectado desde|connected since' && echo "✓ ${name} conectada" && return 0; sleep 1; done; echo "✗ Timeout"; }
+FUNC
+    done
+    cat >> "$shell_rc" << 'FUNC'
+vpnoff() { snxctl disconnect 2>/dev/null; echo "VPN desconectada"; }
+vpnstatus() { snxctl status; }
+FUNC
+    echo "$MARKER_END" >> "$shell_rc"
 }
 
 setup_aliases "$HOME/.bashrc"

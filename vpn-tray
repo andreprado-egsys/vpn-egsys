@@ -1,12 +1,48 @@
 #!/usr/bin/env python3
 """vpn-tray - Monitor de VPN snx-rs na bandeja do sistema."""
 
-import gi
 import subprocess
 import os
 import signal
 import glob
+import sys
+import pwd
 
+# Auto-detecta DISPLAY e DBUS se não estiverem definidos
+def setup_display():
+    uid = os.getuid()
+    user = pwd.getpwuid(uid).pw_name
+
+    if not os.environ.get('DISPLAY'):
+        # Busca display do usuário atual
+        for x in sorted(glob.glob('/tmp/.X11-unix/X*')):
+            display_num = os.path.basename(x).replace('X', '')
+            try:
+                stat = os.stat(x)
+                if stat.st_uid == uid:
+                    os.environ['DISPLAY'] = f':{display_num}'
+                    break
+            except Exception:
+                continue
+        if not os.environ.get('DISPLAY'):
+            # Fallback: tenta qualquer display disponível
+            for x in sorted(glob.glob('/tmp/.X11-unix/X*')):
+                display_num = os.path.basename(x).replace('X', '')
+                os.environ['DISPLAY'] = f':{display_num}'
+                break
+
+    if not os.environ.get('DBUS_SESSION_BUS_ADDRESS'):
+        dbus_path = f'/run/user/{uid}/bus'
+        if os.path.exists(dbus_path):
+            os.environ['DBUS_SESSION_BUS_ADDRESS'] = f'unix:path={dbus_path}'
+
+    if not os.environ.get('DISPLAY'):
+        print("ERRO: Nenhum display encontrado. Execute dentro de uma sessão gráfica.", file=sys.stderr)
+        sys.exit(1)
+
+setup_display()
+
+import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('AyatanaAppIndicator3', '0.1')
 from gi.repository import Gtk, AyatanaAppIndicator3, GLib
