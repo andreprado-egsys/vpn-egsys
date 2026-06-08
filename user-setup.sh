@@ -72,7 +72,7 @@ setup_vpn_config() {
     # Opções extras para VPNs instáveis (PRODAM/AM)
     local extra_opts=""
     if [[ "$name" == "vpnam" ]]; then
-        extra_opts="no-keepalive=true\nike-persist=true"
+        extra_opts="ike-persist=true"
     fi
 
     cat > "$conf_file" <<EOF
