@@ -29,17 +29,40 @@ for conf in "$CONFIG_DIR"/vpn*.conf; do
         vpnprgp) label="VPN PR GP" ;;
     esac
 
+    # Detecta protocolo (snx ou ipsec)
+    proto=$(grep "^protocol=" "$conf" | cut -d= -f2 || echo "snx")
+    proto=${proto:-snx}
+
     # Remove conexão existente e recria
     nmcli connection delete "$label" 2>/dev/null || true
-    nmcli connection add \
-        type dummy \
-        ifname "snx-${name}" \
-        con-name "$label" \
-        autoconnect no \
-        ipv4.method disabled \
-        ipv6.method disabled 2>/dev/null
 
-    echo "[✓] $label (${server})"
+    if [ "$proto" = "ipsec" ]; then
+        # Tenta criar conexão IPsec via StrongSwan no NM se plugin presente
+        if nmcli connection add type vpn vpn-type strongswan con-name "$label" \
+            vpn.data "address=$server, encap=yes, ipcomp=no, method=key, proposal=no" \
+            autoconnect no 2>/dev/null; then
+            echo "[✓] $label (${server}) [IPsec StrongSwan]"
+        else
+            # Fallback para interface de controle dummy
+            nmcli connection add \
+                type dummy \
+                ifname "ipsec-${name}" \
+                con-name "$label" \
+                autoconnect no \
+                ipv4.method disabled \
+                ipv6.method disabled 2>/dev/null || true
+            echo "[✓] $label (${server}) [IPsec Generic]"
+        fi
+    else
+        nmcli connection add \
+            type dummy \
+            ifname "snx-${name}" \
+            con-name "$label" \
+            autoconnect no \
+            ipv4.method disabled \
+            ipv6.method disabled 2>/dev/null || true
+        echo "[✓] $label (${server}) [SNX Check Point]"
+    fi
 done
 
 echo "[✓] Conexões NM configuradas."

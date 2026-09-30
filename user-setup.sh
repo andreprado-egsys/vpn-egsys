@@ -16,6 +16,11 @@ AUTOSTART_DIR="$HOME/.config/autostart"
 APPS_DIR="$HOME/.local/share/applications"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Se executando em Darwin (macOS), delega para o instalador macOS
+if [ "$(uname -s)" = "Darwin" ]; then
+    exec bash "$SCRIPT_DIR/macos/install_macos.sh" "$@"
+fi
+
 info()  { echo -e "${GREEN}[✓]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[✗]${NC} $1"; exit 1; }
@@ -24,18 +29,21 @@ echo -e "${BOLD}=== vpn-egsys: Configuração do usuário $(whoami) ===${NC}\n"
 
 # Verifica se a parte admin já foi feita
 if ! command -v snxctl &>/dev/null; then
-    error "snx-rs/snxctl não instalado. Peça ao administrador (suporte) para rodar: sudo ./install.sh"
+    warn "snxctl não encontrado no PATH. Se for utilizar apenas IPsec, o sistema funcionará normalmente."
 fi
-if ! systemctl is-active --quiet snx-rs.service 2>/dev/null; then
+if command -v systemctl &>/dev/null && ! systemctl is-active --quiet snx-rs.service 2>/dev/null; then
     warn "Serviço snx-rs não está ativo. Peça ao administrador verificar."
 fi
 
-# --- 1. vpn-tray e ícones ---
+# --- 1. vpn-tray, CLI vpn, core e ícones ---
 mkdir -p "$LOCAL_BIN" "$ICON_DIR"
 cp "$SCRIPT_DIR/vpn-tray" "$LOCAL_BIN/vpn-tray"
 chmod +x "$LOCAL_BIN/vpn-tray"
+cp "$SCRIPT_DIR/vpn" "$LOCAL_BIN/vpn"
+chmod +x "$LOCAL_BIN/vpn"
+cp -r "$SCRIPT_DIR/core" "$LOCAL_BIN/"
 cp "$SCRIPT_DIR/icons/"*.svg "$ICON_DIR/"
-info "vpn-tray instalado."
+info "vpn-tray, CLI vpn e ícones instalados."
 
 # --- 2. Autostart e desktop entry ---
 mkdir -p "$AUTOSTART_DIR" "$APPS_DIR"

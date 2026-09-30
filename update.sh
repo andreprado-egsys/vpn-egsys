@@ -1,9 +1,15 @@
 #!/bin/bash
 set -e
 
-# vpn-egsys v2 - Script de Atualização/Migração
-# Migra da arquitetura standalone para command mode + NM integration
-# Compatível: Ubuntu, Debian, Zorin, Arch, CachyOS, EndeavourOS, Manjaro
+# vpn-egsys - Script de Atualização/Migração (Linux & macOS)
+# Compatível: Ubuntu, Debian, Zorin, Arch, CachyOS, macOS (Darwin)
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Se Darwin (macOS), executa atualização dedicada para macOS
+if [ "$(uname -s)" = "Darwin" ]; then
+    exec bash "$SCRIPT_DIR/macos/install_macos.sh" "$@"
+fi
 
 BOLD='\033[1m'
 GREEN='\033[0;32m'
@@ -15,7 +21,6 @@ SNX_RS_VERSION="6.0.6"
 CONFIG_DIR="$HOME/.config/snx-rs"
 LOCAL_BIN="$HOME/.local/bin"
 ICON_DIR="$HOME/.local/share/icons/vpn-egsys"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 info()  { echo -e "${GREEN}[✓]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
@@ -245,12 +250,15 @@ info "Dispatcher NM atualizado."
 warn "Atualizando conexões VPN no NetworkManager..."
 bash "$SCRIPT_DIR/nm-snx-setup.sh"
 
-# --- 10. Atualizar vpn-tray e ícones ---
+# --- 10. Atualizar vpn-tray, CLI vpn, core e ícones ---
 mkdir -p "$LOCAL_BIN" "$ICON_DIR"
 cp "$SCRIPT_DIR/vpn-tray" "$LOCAL_BIN/vpn-tray"
 chmod +x "$LOCAL_BIN/vpn-tray"
+cp "$SCRIPT_DIR/vpn" "$LOCAL_BIN/vpn"
+chmod +x "$LOCAL_BIN/vpn"
+cp -r "$SCRIPT_DIR/core" "$LOCAL_BIN/"
 cp "$SCRIPT_DIR/icons/"*.svg "$ICON_DIR/"
-info "vpn-tray atualizado."
+info "vpn-tray, CLI universal 'vpn' e ícones atualizados."
 
 # --- 11. Atualizar aliases ---
 setup_aliases() {

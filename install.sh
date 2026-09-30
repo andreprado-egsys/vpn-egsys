@@ -1,8 +1,15 @@
 #!/bin/bash
 set -e
 
-# vpn-egsys v2 - Instalador com integração NetworkManager
-# Suporta: Ubuntu, Debian, Zorin, Arch Linux, CachyOS e derivados.
+# vpn-egsys - Instalador Universal (Linux & macOS)
+# Suporta: Ubuntu, Debian, Zorin, Arch Linux, CachyOS, macOS (Darwin)
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Redireciona para o instalador dedicado macOS se executando em Darwin
+if [ "$(uname -s)" = "Darwin" ]; then
+    exec bash "$SCRIPT_DIR/macos/install_macos.sh" "$@"
+fi
 
 BOLD='\033[1m'
 GREEN='\033[0;32m'
@@ -16,7 +23,6 @@ LOCAL_BIN="$HOME/.local/bin"
 APPS_DIR="$HOME/.local/share/applications"
 AUTOSTART_DIR="$HOME/.config/autostart"
 ICON_DIR="$HOME/.local/share/icons/vpn-egsys"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 info()  { echo -e "${GREEN}[✓]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
@@ -171,15 +177,20 @@ if [ "$PKG_MANAGER" == "apt" ]; then
     # webkit2gtk: tenta 4.0 primeiro (Ubuntu 22.04), fallback para 4.1 (Ubuntu 24.04+)
     sudo apt install -y python3-gi python3-requests gir1.2-gtk-3.0 \
         gir1.2-ayatanaappindicator3-0.1 network-manager curl \
-        libwebkit2gtk-4.0-37 2>/dev/null || \
+        strongswan network-manager-strongswan libwebkit2gtk-4.0-37 2>/dev/null || \
     sudo apt install -y python3-gi python3-requests gir1.2-gtk-3.0 \
         gir1.2-ayatanaappindicator3-0.1 network-manager curl \
-        libwebkit2gtk-4.1-0 2>/dev/null || \
+        strongswan network-manager-strongswan libwebkit2gtk-4.1-0 2>/dev/null || \
+    sudo apt install -y python3-gi python3-requests gir1.2-gtk-3.0 \
+        gir1.2-ayatanaappindicator3-0.1 network-manager curl \
+        strongswan network-manager-strongswan 2>/dev/null || \
     sudo apt install -y python3-gi python3-requests gir1.2-gtk-3.0 \
         gir1.2-ayatanaappindicator3-0.1 network-manager curl
 elif [ "$PKG_MANAGER" == "pacman" ]; then
     sudo pacman -Sy --noconfirm --needed python-gobject python-requests gtk3 \
-        libayatana-appindicator networkmanager curl webkit2gtk 2>/dev/null || \
+        libayatana-appindicator networkmanager curl strongswan networkmanager-strongswan webkit2gtk 2>/dev/null || \
+    sudo pacman -Sy --noconfirm --needed python-gobject python-requests gtk3 \
+        libayatana-appindicator networkmanager curl strongswan networkmanager-strongswan 2>/dev/null || \
     sudo pacman -Sy --noconfirm --needed python-gobject python-requests gtk3 \
         libayatana-appindicator networkmanager curl
 fi
@@ -328,12 +339,15 @@ info "Dispatcher NM instalado."
 warn "Criando conexões VPN no NetworkManager..."
 bash "$SCRIPT_DIR/nm-snx-setup.sh"
 
-# --- 11. vpn-tray e ícones ---
+# --- 11. vpn-tray, CLI vpn, core e ícones ---
 mkdir -p "$LOCAL_BIN" "$ICON_DIR"
 cp "$SCRIPT_DIR/vpn-tray" "$LOCAL_BIN/vpn-tray"
 chmod +x "$LOCAL_BIN/vpn-tray"
+cp "$SCRIPT_DIR/vpn" "$LOCAL_BIN/vpn"
+chmod +x "$LOCAL_BIN/vpn"
+cp -r "$SCRIPT_DIR/core" "$LOCAL_BIN/"
 cp "$SCRIPT_DIR/icons/"*.svg "$ICON_DIR/"
-info "vpn-tray e ícones instalados."
+info "vpn-tray, CLI universal 'vpn' e ícones instalados."
 
 # --- 12. Desktop entry e autostart ---
 mkdir -p "$APPS_DIR" "$AUTOSTART_DIR"

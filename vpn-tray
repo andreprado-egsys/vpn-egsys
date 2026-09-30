@@ -1,386 +1,465 @@
 #!/usr/bin/env python3
-"""vpn-tray - Monitor de VPN snx-rs na bandeja do sistema."""
+"""
+vpn-tray - Monitor Universal de VPN (SNX & IPsec) na bandeja do sistema.
+Compatível com Linux (Gtk / AyatanaAppIndicator) e macOS (pystray / AppKit nativo).
+"""
 
-import subprocess
 import os
-import signal
-import glob
 import sys
-import pwd
+import glob
+import signal
+import platform
+import subprocess
 
-# Auto-detecta DISPLAY e DBUS se não estiverem definidos
-def setup_display():
-    uid = os.getuid()
-    user = pwd.getpwuid(uid).pw_name
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
 
-    if not os.environ.get('DISPLAY'):
-        # Busca display do usuário atual
-        for x in sorted(glob.glob('/tmp/.X11-unix/X*')):
-            display_num = os.path.basename(x).replace('X', '')
-            try:
-                stat = os.stat(x)
-                if stat.st_uid == uid:
-                    os.environ['DISPLAY'] = f':{display_num}'
-                    break
-            except Exception:
-                continue
+from core.vpn_manager import (
+    discover_vpns,
+    connect_vpn,
+    disconnect_all,
+    get_active_vpn,
+    write_vpn_config,
+    parse_vpn_config,
+    get_config_dir,
+    is_macos,
+    is_linux,
+)
+
+IS_MACOS = is_macos()
+IS_LINUX = is_linux()
+
+# Configurações de caminhos de ícones
+ICON_DIR = os.path.expanduser('~/.local/share/icons/vpn-egsys')
+if IS_MACOS:
+    ICON_DIR = os.path.expanduser('~/Library/Application Support/vpn-egsys/icons')
+    if not os.path.exists(ICON_DIR):
+        ICON_DIR = os.path.join(SCRIPT_DIR, 'icons')
+
+
+# -------------------------------------------------------------
+# BACKEND LINUX (GTK 3 + AyatanaAppIndicator3)
+# -------------------------------------------------------------
+def run_linux_tray():
+    import pwd
+
+    def setup_display():
+        uid = os.getuid()
         if not os.environ.get('DISPLAY'):
-            # Fallback: tenta qualquer display disponível
             for x in sorted(glob.glob('/tmp/.X11-unix/X*')):
                 display_num = os.path.basename(x).replace('X', '')
-                os.environ['DISPLAY'] = f':{display_num}'
-                break
+                try:
+                    stat = os.stat(x)
+                    if stat.st_uid == uid:
+                        os.environ['DISPLAY'] = f':{display_num}'
+                        break
+                except Exception:
+                    continue
+            if not os.environ.get('DISPLAY'):
+                for x in sorted(glob.glob('/tmp/.X11-unix/X*')):
+                    display_num = os.path.basename(x).replace('X', '')
+                    os.environ['DISPLAY'] = f':{display_num}'
+                    break
 
-    if not os.environ.get('DBUS_SESSION_BUS_ADDRESS'):
-        dbus_path = f'/run/user/{uid}/bus'
-        if os.path.exists(dbus_path):
-            os.environ['DBUS_SESSION_BUS_ADDRESS'] = f'unix:path={dbus_path}'
+        if not os.environ.get('DBUS_SESSION_BUS_ADDRESS'):
+            dbus_path = f'/run/user/{uid}/bus'
+            if os.path.exists(dbus_path):
+                os.environ['DBUS_SESSION_BUS_ADDRESS'] = f'unix:path={dbus_path}'
 
-    if not os.environ.get('DISPLAY'):
-        print("ERRO: Nenhum display encontrado. Execute dentro de uma sessão gráfica.", file=sys.stderr)
-        sys.exit(1)
+        if not os.environ.get('DISPLAY'):
+            print("ERRO: Nenhum display encontrado. Execute dentro de uma sessão gráfica.", file=sys.stderr)
+            sys.exit(1)
 
-setup_display()
+    setup_display()
 
-import gi
-gi.require_version('Gtk', '3.0')
-gi.require_version('AyatanaAppIndicator3', '0.1')
-from gi.repository import Gtk, AyatanaAppIndicator3, GLib
-
-ICON_DIR = os.path.expanduser('~/.local/share/icons/vpn-egsys')
-CONFIG_DIR = os.path.expanduser('~/.config/snx-rs')
-
-# Ícones: usa do sistema (funciona em GNOME 46+), fallback para customizados
-ICON_CONNECTED = 'network-vpn'
-ICON_DISCONNECTED = 'network-vpn-disconnected'
-
-# Se os ícones do sistema não existirem, tenta usar os customizados
-def _check_system_icons():
-    global ICON_CONNECTED, ICON_DISCONNECTED
+    import gi
+    gi.require_version('Gtk', '3.0')
     try:
-        import gi
-        gi.require_version('Gtk', '3.0')
-        from gi.repository import Gtk
-        theme = Gtk.IconTheme.get_default()
-        if not theme.has_icon('network-vpn'):
-            ICON_CONNECTED = 'vpn-connected'
-            ICON_DISCONNECTED = 'vpn-disconnected'
-    except Exception:
-        pass
-
-KNOWN_LABELS = {
-    'vpnro': 'VPN RO - Rondônia',
-    'vpnpr': 'VPN PR - Paraná',
-    'vpnam': 'VPN AM - Amazonas',
-    'vpnmt': 'VPN MT - Mato Grosso',
-    'vpnsc': 'VPN SC - Santa Catarina',
-    'vpnto': 'VPN TO - Tocantins',
-    'vpnprgp': 'VPN PR GP',
-}
-
-
-def discover_vpns():
-    configs = {}
-    for conf in sorted(glob.glob(os.path.join(CONFIG_DIR, 'vpn*.conf'))):
-        name = os.path.basename(conf).replace('.conf', '')
-        label = KNOWN_LABELS.get(name, f'VPN {name[3:].upper()}')
-        configs[name] = (label, os.path.basename(conf))
-    return configs
-
-
-class VPNTray:
-    def __init__(self):
-        _check_system_icons()
-        self.configs = discover_vpns()
-        self.indicator = AyatanaAppIndicator3.Indicator.new_with_path(
-            'vpn-monitor', ICON_DISCONNECTED,
-            AyatanaAppIndicator3.IndicatorCategory.APPLICATION_STATUS,
-            ICON_DIR)
-        self.indicator.set_status(AyatanaAppIndicator3.IndicatorStatus.ACTIVE)
-        self.indicator.set_title('VPN Desconectada')
-        self.build_menu()
-        GLib.timeout_add_seconds(3, self.check_status)
-        self.check_status()
-
-    def build_menu(self):
-        menu = Gtk.Menu()
-
-        self.status_item = Gtk.MenuItem(label='✗ Desconectado')
-        self.status_item.set_sensitive(False)
-        menu.append(self.status_item)
-        menu.append(Gtk.SeparatorMenuItem())
-
-        for key, (label, _) in self.configs.items():
-            item = Gtk.MenuItem(label=f'Conectar {label}')
-            item.connect('activate', self.on_connect, key)
-            menu.append(item)
-
-        menu.append(Gtk.SeparatorMenuItem())
-
-        disc = Gtk.MenuItem(label='Desconectar')
-        disc.connect('activate', self.on_disconnect)
-        menu.append(disc)
-
-        menu.append(Gtk.SeparatorMenuItem())
-
-        config_item = Gtk.MenuItem(label='⚙ Configurar VPNs...')
-        config_item.connect('activate', self.on_configure)
-        menu.append(config_item)
-
-        menu.append(Gtk.SeparatorMenuItem())
-
-        quit_item = Gtk.MenuItem(label='Sair')
-        quit_item.connect('activate', self.on_quit)
-        menu.append(quit_item)
-
-        menu.show_all()
-        self.indicator.set_menu(menu)
-
-    def get_active_vpn_name(self):
+        gi.require_version('AyatanaAppIndicator3', '0.1')
+        from gi.repository import AyatanaAppIndicator3 as AppIndicator
+    except (ValueError, ImportError):
         try:
-            r = subprocess.run(['snxctl', 'status'],
-                               capture_output=True, text=True, timeout=5)
-            output = r.stdout.strip() if r.returncode == 0 else ""
-            if not output or "desconectado" in output.lower() or "disconnected" in output.lower():
-                return None
-        except Exception:
-            return None
+            gi.require_version('AppIndicator3', '0.1')
+            from gi.repository import AppIndicator3 as AppIndicator
+        except (ValueError, ImportError):
+            print("ERRO: AyatanaAppIndicator3 ou AppIndicator3 não encontrado.", file=sys.stderr)
+            sys.exit(1)
 
-        active_conf = os.path.join(CONFIG_DIR, 'snx-rs.conf')
-        if os.path.exists(active_conf):
-            try:
-                with open(active_conf) as f:
-                    active_content = f.read().strip()
-                for key, (label, conf_file) in self.configs.items():
-                    conf_path = os.path.join(CONFIG_DIR, conf_file)
-                    if os.path.exists(conf_path):
-                        with open(conf_path) as f:
-                            if f.read().strip() == active_content:
-                                return label
-            except Exception:
-                pass
-        return 'VPN Conectada'
+    from gi.repository import Gtk, GLib
 
-    def check_status(self):
-        vpn = self.get_active_vpn_name()
-        if vpn:
-            self.indicator.set_icon_full(ICON_CONNECTED, f'Conectado: {vpn}')
-            self.indicator.set_title(f'VPN: {vpn}')
-            self.status_item.set_label(f'✓ {vpn}')
-        else:
-            self.indicator.set_icon_full(ICON_DISCONNECTED, 'Desconectado')
+    icon_connected = 'network-vpn'
+    icon_disconnected = 'network-vpn-disconnected'
+
+    theme = Gtk.IconTheme.get_default()
+    if not theme.has_icon('network-vpn'):
+        icon_connected = 'vpn-connected'
+        icon_disconnected = 'vpn-disconnected'
+
+    class LinuxVPNTray:
+        def __init__(self):
+            self.configs = discover_vpns()
+            self.indicator = AppIndicator.Indicator.new_with_path(
+                'vpn-monitor', icon_disconnected,
+                AppIndicator.IndicatorCategory.APPLICATION_STATUS,
+                ICON_DIR)
+            self.indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
             self.indicator.set_title('VPN Desconectada')
-            self.status_item.set_label('✗ Desconectado')
-        return True
+            self.build_menu()
+            GLib.timeout_add_seconds(3, self.check_status)
+            self.check_status()
 
-    def on_connect(self, widget, key):
-        label, conf_file = self.configs[key]
-        conf_path = os.path.join(CONFIG_DIR, conf_file)
-        snx_conf = os.path.join(CONFIG_DIR, 'snx-rs.conf')
+        def build_menu(self):
+            menu = Gtk.Menu()
 
-        subprocess.run(['snxctl', 'disconnect'], capture_output=True, timeout=5)
-        for k, (lbl, _) in self.configs.items():
-            subprocess.run(['nmcli', 'connection', 'down', lbl],
-                          capture_output=True, timeout=3)
-        try:
-            with open(conf_path) as f:
-                content = f.read()
-            with open(snx_conf, 'w') as f:
-                f.write(content)
-        except Exception:
-            pass
-        subprocess.Popen(['snxctl', 'connect'])
-        subprocess.Popen(['nmcli', 'connection', 'up', label])
+            self.status_item = Gtk.MenuItem(label='✗ Desconectado')
+            self.status_item.set_sensitive(False)
+            menu.append(self.status_item)
+            menu.append(Gtk.SeparatorMenuItem())
 
-    def on_disconnect(self, widget):
-        subprocess.run(['snxctl', 'disconnect'], capture_output=True, timeout=5)
-        for key, (label, _) in self.configs.items():
-            subprocess.run(['nmcli', 'connection', 'down', label],
-                          capture_output=True, timeout=3)
+            for key, info in sorted(self.configs.items()):
+                label = info.get('label', key)
+                proto = info.get('protocol', 'snx').upper()
+                item = Gtk.MenuItem(label=f'Conectar {label} [{proto}]')
+                item.connect('activate', self.on_connect, key)
+                menu.append(item)
 
-    def on_configure(self, widget):
-        """Abre janela para adicionar/editar/remover VPNs."""
-        dialog = Gtk.Dialog(title="Configurar VPNs", flags=0)
-        dialog.set_default_size(450, 400)
-        box = dialog.get_content_area()
+            menu.append(Gtk.SeparatorMenuItem())
 
-        # Lista de VPNs existentes com botões editar/remover
-        frame = Gtk.Frame(label="VPNs configuradas")
-        listbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        listbox.set_margin_top(10)
-        listbox.set_margin_bottom(10)
-        listbox.set_margin_start(10)
-        listbox.set_margin_end(10)
+            disc = Gtk.MenuItem(label='Desconectar')
+            disc.connect('activate', self.on_disconnect)
+            menu.append(disc)
 
-        if not self.configs:
-            listbox.pack_start(Gtk.Label(label="Nenhuma VPN configurada"), False, False, 0)
+            menu.append(Gtk.SeparatorMenuItem())
 
-        for key, (label, conf_file) in self.configs.items():
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
-            row.pack_start(Gtk.Label(label=f"{label} ({key})", xalign=0), True, True, 0)
-            btn_edit = Gtk.Button(label="Editar")
-            btn_edit.connect('clicked', self.on_edit_vpn, key, dialog)
-            row.pack_end(btn_edit, False, False, 0)
-            btn_rm = Gtk.Button(label="Remover")
-            btn_rm.connect('clicked', self.on_remove_vpn, key, dialog)
-            row.pack_end(btn_rm, False, False, 0)
-            listbox.pack_start(row, False, False, 0)
+            config_item = Gtk.MenuItem(label='⚙ Configurar VPNs...')
+            config_item.connect('activate', self.on_configure)
+            menu.append(config_item)
 
-        frame.add(listbox)
-        box.pack_start(frame, True, True, 10)
+            menu.append(Gtk.SeparatorMenuItem())
 
-        # Seção adicionar
-        frame2 = Gtk.Frame(label="Adicionar nova VPN")
-        grid = Gtk.Grid(column_spacing=10, row_spacing=5)
-        grid.set_margin_top(10)
-        grid.set_margin_bottom(10)
-        grid.set_margin_start(10)
-        grid.set_margin_end(10)
+            quit_item = Gtk.MenuItem(label='Sair')
+            quit_item.connect('activate', self.on_quit)
+            menu.append(quit_item)
 
-        grid.attach(Gtk.Label(label="Estado (ex: ro, pr, am):", xalign=0), 0, 0, 1, 1)
-        self.entry_id = Gtk.Entry()
-        self.entry_id.set_placeholder_text("ro, pr, am, sc, to, mt...")
-        grid.attach(self.entry_id, 1, 0, 1, 1)
+            menu.show_all()
+            self.indicator.set_menu(menu)
 
-        grid.attach(Gtk.Label(label="Servidor:", xalign=0), 0, 1, 1, 1)
-        self.entry_server = Gtk.Entry()
-        self.entry_server.set_placeholder_text("IP ou hostname")
-        grid.attach(self.entry_server, 1, 1, 1, 1)
+        def check_status(self):
+            active = get_active_vpn()
+            if active:
+                label = active.get('label', 'VPN Conectada')
+                proto = active.get('protocol', 'snx').upper()
+                self.indicator.set_icon_full(icon_connected, f'Conectado: {label} [{proto}]')
+                self.indicator.set_title(f'VPN: {label}')
+                self.status_item.set_label(f'✓ {label} [{proto}]')
+            else:
+                self.indicator.set_icon_full(icon_disconnected, 'Desconectado')
+                self.indicator.set_title('VPN Desconectada')
+                self.status_item.set_label('✗ Desconectado')
+            return True
 
-        grid.attach(Gtk.Label(label="Usuário:", xalign=0), 0, 2, 1, 1)
-        self.entry_user = Gtk.Entry()
-        grid.attach(self.entry_user, 1, 2, 1, 1)
+        def on_connect(self, widget, key):
+            connect_vpn(key)
 
-        grid.attach(Gtk.Label(label="Senha:", xalign=0), 0, 3, 1, 1)
-        self.entry_pass = Gtk.Entry()
-        self.entry_pass.set_visibility(False)
-        grid.attach(self.entry_pass, 1, 3, 1, 1)
+        def on_disconnect(self, widget):
+            disconnect_all()
 
-        btn_add = Gtk.Button(label="Adicionar")
-        btn_add.connect('clicked', self.on_add_vpn, dialog)
-        grid.attach(btn_add, 1, 4, 1, 1)
+        def on_configure(self, widget):
+            dialog = Gtk.Dialog(title="Configurar VPNs (egSYS)", flags=0)
+            dialog.set_default_size(500, 480)
+            box = dialog.get_content_area()
 
-        frame2.add(grid)
-        box.pack_start(frame2, False, False, 10)
+            # Lista de VPNs existentes
+            frame = Gtk.Frame(label="VPNs configuradas")
+            listbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+            listbox.set_margin_top(10)
+            listbox.set_margin_bottom(10)
+            listbox.set_margin_start(10)
+            listbox.set_margin_end(10)
 
-        dialog.show_all()
-        dialog.run()
-        dialog.destroy()
+            if not self.configs:
+                listbox.pack_start(Gtk.Label(label="Nenhuma VPN configurada"), False, False, 0)
 
-    def on_add_vpn(self, widget, dialog):
-        raw_id = self.entry_id.get_text().strip().lower().replace(' ', '')
-        server = self.entry_server.get_text().strip()
-        user = self.entry_user.get_text().strip()
-        passwd = self.entry_pass.get_text().strip()
+            for key, info in sorted(self.configs.items()):
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+                lbl = info.get('label', key)
+                proto = info.get('protocol', 'snx').upper()
+                row.pack_start(Gtk.Label(label=f"{lbl} [{proto}]", xalign=0), True, True, 0)
 
-        if not all([raw_id, server, user, passwd]):
-            return
+                btn_edit = Gtk.Button(label="Editar")
+                btn_edit.connect('clicked', self.on_edit_vpn, key, dialog)
+                row.pack_end(btn_edit, False, False, 0)
 
-        # Garante formato vpnXX
-        vpn_id = raw_id if raw_id.startswith('vpn') else f'vpn{raw_id}'
-        vpn_id = ''.join(c for c in vpn_id if c.isalnum())
+                btn_rm = Gtk.Button(label="Remover")
+                btn_rm.connect('clicked', self.on_remove_vpn, key, dialog)
+                row.pack_end(btn_rm, False, False, 0)
 
-        import base64
-        os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
-        pass_b64 = base64.b64encode(passwd.encode()).decode()
-        conf_path = os.path.join(CONFIG_DIR, f'{vpn_id}.conf')
-        with open(conf_path, 'w') as f:
-            f.write(f'server-name={server}\n')
-            f.write(f'user-name={user}\n')
-            f.write(f'password={pass_b64}\n')
-            f.write('ignore-server-cert=true\n')
-            f.write('login-type=vpn\n')
-        os.chmod(conf_path, 0o600)
+                listbox.pack_start(row, False, False, 0)
 
-        self.configs = discover_vpns()
-        self.build_menu()
-        dialog.destroy()
-        self.on_configure(None)
+            frame.add(listbox)
+            box.pack_start(frame, True, True, 10)
 
-    def on_edit_vpn(self, widget, key, parent_dialog):
-        """Edita credenciais de uma VPN existente."""
-        conf_path = os.path.join(CONFIG_DIR, f'{key}.conf')
-        if not os.path.exists(conf_path):
-            return
+            # Seção Adicionar
+            frame2 = Gtk.Frame(label="Adicionar nova VPN")
+            grid = Gtk.Grid(column_spacing=10, row_spacing=5)
+            grid.set_margin_top(10)
+            grid.set_margin_bottom(10)
+            grid.set_margin_start(10)
+            grid.set_margin_end(10)
 
-        # Lê valores atuais
-        current = {}
-        with open(conf_path) as f:
-            for line in f:
-                if '=' in line:
-                    k, v = line.strip().split('=', 1)
-                    current[k] = v
+            # Protocolo
+            grid.attach(Gtk.Label(label="Protocolo:", xalign=0), 0, 0, 1, 1)
+            self.combo_proto = Gtk.ComboBoxText()
+            self.combo_proto.append('snx', 'Check Point SSL (SNX)')
+            self.combo_proto.append('ipsec', 'IPsec / IKEv2')
+            self.combo_proto.set_active(0)
+            grid.attach(self.combo_proto, 1, 0, 1, 1)
 
-        dialog = Gtk.Dialog(title=f"Editar {key}", flags=0)
-        dialog.set_default_size(350, 200)
-        box = dialog.get_content_area()
-        grid = Gtk.Grid(column_spacing=10, row_spacing=5)
-        grid.set_margin_top(10)
-        grid.set_margin_bottom(10)
-        grid.set_margin_start(10)
-        grid.set_margin_end(10)
+            # Identificador
+            grid.attach(Gtk.Label(label="Estado / ID (ex: ro, pr, am, sc):", xalign=0), 0, 1, 1, 1)
+            self.entry_id = Gtk.Entry()
+            self.entry_id.set_placeholder_text("ro, pr, am, sc, to...")
+            grid.attach(self.entry_id, 1, 1, 1, 1)
 
-        grid.attach(Gtk.Label(label="Servidor:", xalign=0), 0, 0, 1, 1)
-        entry_srv = Gtk.Entry()
-        entry_srv.set_text(current.get('server-name', ''))
-        grid.attach(entry_srv, 1, 0, 1, 1)
+            # Servidor
+            grid.attach(Gtk.Label(label="Servidor / Gateway:", xalign=0), 0, 2, 1, 1)
+            self.entry_server = Gtk.Entry()
+            self.entry_server.set_placeholder_text("IP ou Hostname")
+            grid.attach(self.entry_server, 1, 2, 1, 1)
 
-        grid.attach(Gtk.Label(label="Usuário:", xalign=0), 0, 1, 1, 1)
-        entry_usr = Gtk.Entry()
-        entry_usr.set_text(current.get('user-name', ''))
-        grid.attach(entry_usr, 1, 1, 1, 1)
+            # Usuário
+            grid.attach(Gtk.Label(label="Usuário:", xalign=0), 0, 3, 1, 1)
+            self.entry_user = Gtk.Entry()
+            grid.attach(self.entry_user, 1, 3, 1, 1)
 
-        grid.attach(Gtk.Label(label="Senha (nova):", xalign=0), 0, 2, 1, 1)
-        entry_pwd = Gtk.Entry()
-        entry_pwd.set_visibility(False)
-        entry_pwd.set_placeholder_text("deixe vazio para manter")
-        grid.attach(entry_pwd, 1, 2, 1, 1)
+            # Senha
+            grid.attach(Gtk.Label(label="Senha:", xalign=0), 0, 4, 1, 1)
+            self.entry_pass = Gtk.Entry()
+            self.entry_pass.set_visibility(False)
+            grid.attach(self.entry_pass, 1, 4, 1, 1)
 
-        box.add(grid)
-        dialog.add_button("Cancelar", Gtk.ResponseType.CANCEL)
-        dialog.add_button("Salvar", Gtk.ResponseType.OK)
-        dialog.show_all()
+            # Rotas opcionais
+            grid.attach(Gtk.Label(label="Rotas (opcional):", xalign=0), 0, 5, 1, 1)
+            self.entry_routes = Gtk.Entry()
+            self.entry_routes.set_placeholder_text("ex: 10.0.0.0/8, 172.23.0.0/16")
+            grid.attach(self.entry_routes, 1, 5, 1, 1)
 
-        response = dialog.run()
-        if response == Gtk.ResponseType.OK:
+            btn_add = Gtk.Button(label="Adicionar VPN")
+            btn_add.connect('clicked', self.on_add_vpn, dialog)
+            grid.attach(btn_add, 1, 6, 1, 1)
+
+            frame2.add(grid)
+            box.pack_start(frame2, False, False, 10)
+
+            dialog.show_all()
+            dialog.run()
+            dialog.destroy()
+
+        def on_add_vpn(self, widget, dialog):
+            raw_id = self.entry_id.get_text().strip().lower().replace(' ', '')
+            server = self.entry_server.get_text().strip()
+            user = self.entry_user.get_text().strip()
+            passwd = self.entry_pass.get_text().strip()
+            protocol = self.combo_proto.get_active_id() or 'snx'
+            routes = self.entry_routes.get_text().strip()
+
+            if not all([raw_id, server, user, passwd]):
+                return
+
             import base64
-            server = entry_srv.get_text().strip() or current.get('server-name', '')
-            user = entry_usr.get_text().strip() or current.get('user-name', '')
-            new_pass = entry_pwd.get_text().strip()
-            pass_b64 = base64.b64encode(new_pass.encode()).decode() if new_pass else current.get('password', '')
+            pass_b64 = base64.b64encode(passwd.encode()).decode()
 
-            with open(conf_path, 'w') as f:
-                f.write(f'server-name={server}\n')
-                f.write(f'user-name={user}\n')
-                f.write(f'password={pass_b64}\n')
-                f.write('ignore-server-cert=true\n')
-                f.write('login-type=vpn\n')
-            os.chmod(conf_path, 0o600)
+            extra_opts = {}
+            if raw_id in ['am', 'vpnam'] and protocol == 'snx':
+                extra_opts['ike-persist'] = 'true'
 
-        dialog.destroy()
-        parent_dialog.destroy()
-        self.configs = discover_vpns()
-        self.build_menu()
-        self.on_configure(None)
+            write_vpn_config(
+                vpn_id=raw_id,
+                server=server,
+                user=user,
+                password_b64=pass_b64,
+                protocol=protocol,
+                routes=routes,
+                extra_options=extra_opts
+            )
 
-    def on_remove_vpn(self, widget, key, dialog):
-        conf_path = os.path.join(CONFIG_DIR, f'{key}.conf')
-        if os.path.exists(conf_path):
-            os.remove(conf_path)
-        # Remove conexão NM
-        label = self.configs.get(key, ('', ''))[0]
-        subprocess.run(['nmcli', 'connection', 'delete', label],
-                       capture_output=True, timeout=5)
-        self.configs = discover_vpns()
-        self.build_menu()
-        dialog.destroy()
-        self.on_configure(None)
+            self.configs = discover_vpns()
+            self.build_menu()
+            dialog.destroy()
+            self.on_configure(None)
 
-    def on_quit(self, widget):
-        Gtk.main_quit()
+        def on_edit_vpn(self, widget, key, parent_dialog):
+            cfg_dir = get_config_dir()
+            conf_path = os.path.join(cfg_dir, f'{key}.conf')
+            if not os.path.exists(conf_path):
+                return
+
+            current = parse_vpn_config(conf_path)
+
+            dialog = Gtk.Dialog(title=f"Editar {key}", flags=0)
+            dialog.set_default_size(380, 240)
+            box = dialog.get_content_area()
+            grid = Gtk.Grid(column_spacing=10, row_spacing=5)
+            grid.set_margin_top(10)
+            grid.set_margin_bottom(10)
+            grid.set_margin_start(10)
+            grid.set_margin_end(10)
+
+            grid.attach(Gtk.Label(label="Servidor:", xalign=0), 0, 0, 1, 1)
+            entry_srv = Gtk.Entry()
+            entry_srv.set_text(current.get('server-name', ''))
+            grid.attach(entry_srv, 1, 0, 1, 1)
+
+            grid.attach(Gtk.Label(label="Usuário:", xalign=0), 0, 1, 1, 1)
+            entry_usr = Gtk.Entry()
+            entry_usr.set_text(current.get('user-name', ''))
+            grid.attach(entry_usr, 1, 1, 1, 1)
+
+            grid.attach(Gtk.Label(label="Senha (nova):", xalign=0), 0, 2, 1, 1)
+            entry_pwd = Gtk.Entry()
+            entry_pwd.set_visibility(False)
+            entry_pwd.set_placeholder_text("deixe vazio para manter")
+            grid.attach(entry_pwd, 1, 2, 1, 1)
+
+            grid.attach(Gtk.Label(label="Rotas:", xalign=0), 0, 3, 1, 1)
+            entry_routes = Gtk.Entry()
+            entry_routes.set_text(current.get('routes', ''))
+            grid.attach(entry_routes, 1, 3, 1, 1)
+
+            box.add(grid)
+            dialog.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+            dialog.add_button("Salvar", Gtk.ResponseType.OK)
+            dialog.show_all()
+
+            response = dialog.run()
+            if response == Gtk.ResponseType.OK:
+                import base64
+                server = entry_srv.get_text().strip() or current.get('server-name', '')
+                user = entry_usr.get_text().strip() or current.get('user-name', '')
+                new_pass = entry_pwd.get_text().strip()
+                pass_b64 = base64.b64encode(new_pass.encode()).decode() if new_pass else current.get('password', '')
+                routes = entry_routes.get_text().strip()
+
+                write_vpn_config(
+                    vpn_id=key,
+                    server=server,
+                    user=user,
+                    password_b64=pass_b64,
+                    protocol=current.get('protocol', 'snx'),
+                    routes=routes
+                )
+
+            dialog.destroy()
+            parent_dialog.destroy()
+            self.configs = discover_vpns()
+            self.build_menu()
+            self.on_configure(None)
+
+        def on_remove_vpn(self, widget, key, dialog):
+            cfg_dir = get_config_dir()
+            conf_path = os.path.join(cfg_dir, f'{key}.conf')
+            if os.path.exists(conf_path):
+                os.remove(conf_path)
+
+            label = self.configs.get(key, {}).get('label', '')
+            if label:
+                subprocess.run(['nmcli', 'connection', 'delete', label], capture_output=True, timeout=5)
+
+            self.configs = discover_vpns()
+            self.build_menu()
+            dialog.destroy()
+            self.on_configure(None)
+
+        def on_quit(self, widget):
+            Gtk.main_quit()
+
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    LinuxVPNTray()
+    Gtk.main()
+
+
+# -------------------------------------------------------------
+# BACKEND MACOS (Darwin / pystray ou Background Monitor)
+# -------------------------------------------------------------
+def run_macos_tray():
+    """Executa o Tray no macOS usando pystray / AppKit nativo."""
+    try:
+        import pystray
+        from PIL import Image, ImageDraw
+
+        def create_icon_image(connected: bool):
+            width = 64
+            height = 64
+            image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+            dc = ImageDraw.Draw(image)
+            color = (34, 197, 94, 255) if connected else (156, 163, 175, 255)
+            dc.ellipse((8, 8, 56, 56), fill=color)
+            return image
+
+        def on_connect_clicked(icon, item):
+            vpn_id = str(item)
+            connect_vpn(vpn_id)
+            update_tray(icon)
+
+        def on_disconnect_clicked(icon, item):
+            disconnect_all()
+            update_tray(icon)
+
+        def on_quit_clicked(icon, item):
+            icon.stop()
+
+        def build_macos_menu():
+            configs = discover_vpns()
+            active = get_active_vpn()
+            status_text = f"✓ {active['label']}" if active else "✗ Desconectado"
+
+            items = [
+                pystray.MenuItem(status_text, lambda: None, enabled=False),
+                pystray.Menu.SEPARATOR,
+            ]
+
+            for key, info in sorted(configs.items()):
+                lbl = info.get('label', key)
+                proto = info.get('protocol', 'snx').upper()
+                items.append(pystray.MenuItem(f"Conectar {lbl} [{proto}]", on_connect_clicked))
+
+            items.extend([
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem("Desconectar", on_disconnect_clicked),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem("Sair", on_quit_clicked),
+            ])
+            return pystray.Menu(*items)
+
+        def update_tray(icon):
+            active = get_active_vpn()
+            icon.icon = create_icon_image(bool(active))
+            icon.title = f"egSYS VPN: {active['label']}" if active else "egSYS VPN: Desconectado"
+            icon.menu = build_macos_menu()
+
+        icon = pystray.Icon(
+            'vpn-egsys',
+            icon=create_icon_image(False),
+            title='egSYS VPN Monitor',
+            menu=build_macos_menu()
+        )
+        icon.run()
+
+    except ImportError:
+        print("[!] Módulo 'pystray' ou 'Pillow' não instalado no macOS.")
+        print("    Para habilitar o ícone na barra de menus do macOS, instale:")
+        print("    pip3 install pystray Pillow")
+        print("\n    O CLI 'vpn' está 100% disponível para uso no terminal: 'vpn list', 'vpn connect <id>'")
+        sys.exit(0)
+
+
+def main():
+    if IS_MACOS:
+        run_macos_tray()
+    else:
+        run_linux_tray()
 
 
 if __name__ == '__main__':
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
-    VPNTray()
-    Gtk.main()
+    main()

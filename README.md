@@ -1,22 +1,24 @@
-# vpn-egsys v2
+# vpn-egsys v2.1 (Multi-Protocolo & Cross-Platform)
 
-Monitor de bandeja, integração snxctl e utilitário de configuração para VPN Check Point utilizando `snx-rs`.
+Gerenciador universal de VPNs, monitor de bandeja (`vpn-tray`), utilitário de terminal (`vpn`) e integração com **Check Point (SNX via `snx-rs`)** e **IPsec (IKEv2)** para estações **Linux** e **macOS**.
 
-## Novidades v2
-
-- **snx-rs em command mode** — roda como serviço systemd com restart automático
-- **snxctl** — controle confiável via `snxctl connect/disconnect/status`
-- **Conexão síncrona** — sem delay de rotas/DNS; só reporta "conectado" quando tudo está pronto
-- **VPN Tray** — ícone na bandeja com menu para conectar/desconectar/configurar
-- **Descoberta dinâmica** — detecta automaticamente todas as VPNs configuradas
-- **Multi-distro** — Ubuntu, Debian, Zorin, Mint, Pop, Arch, CachyOS, EndeavourOS, Manjaro
+## Novidades v2.1
+- **Suporte Multi-Protocolo**: Check Point SSL Network Extender (SNX) e IPsec (IKEv2).
+- **Suporte Cross-Platform**: Linux (Ubuntu, Debian, Arch, CachyOS) e macOS (Monterey, Ventura, Sonoma, Sequoia - Intel & Apple Silicon).
+- **CLI Universal `vpn`**: comandos rápidos no terminal (`vpn list`, `vpn ro`, `vpn off`, `vpn status`, `vpn add`).
+- **Tray Nativo macOS**: compatibilidade com a barra de menus do macOS via `pystray` / AppKit nativo e LaunchAgent `launchd`.
+- **Suíte de Testes Automatizados**: testes unitários de configuração e CLI (`./run_tests.sh`).
+- **snx-rs em command mode** — roda como serviço systemd no Linux com restart automático.
+- **Conexão síncrona** — sem delay de rotas/DNS; reporta com precisão quando tudo está pronto.
 
 ## Sistemas Suportados
-
-- **Debian/Ubuntu** (Ubuntu, Debian, Zorin OS, Linux Mint, Pop!_OS)
-- **Arch Linux** (Arch, CachyOS, EndeavourOS, Manjaro)
-- **Desktop**: GNOME, KDE Plasma, XFCE
-- Arquitetura: x86_64
+- **Linux**:
+  - Debian/Ubuntu (Ubuntu, Debian, Zorin OS, Linux Mint, Pop!_OS)
+  - Arch Linux (Arch, CachyOS, EndeavourOS, Manjaro)
+  - Desktops: GNOME, KDE Plasma, XFCE
+- **macOS**:
+  - macOS 12+ (Monterey, Ventura, Sonoma, Sequoia)
+  - Apple Silicon (M1/M2/M3/M4) e Intel x86_64
 
 ## Instalação (PC novo)
 
@@ -55,53 +57,81 @@ O ícone na bandeja do sistema permite:
 - **Desconectar** a VPN ativa
 - **⚙ Configurar VPNs** — adicionar ou remover VPNs
 
-### Via Terminal
+### Via Terminal (CLI Universal `vpn`)
 
-Aliases gerados automaticamente para cada VPN configurada:
-- `vpnro` — Conecta à VPN Rondônia
-- `vpnpr` — Conecta à VPN Paraná
-- `vpnam` — Conecta à VPN Amazonas
-- `vpnoff` — Desconecta a VPN ativa
-- `vpnstatus` — Status detalhado da conexão
+O utilitário `vpn` permite gerenciar todas as conexões em Linux e macOS:
+```bash
+vpn list             # Lista todas as VPNs (id, protocolo SNX/IPsec, status, servidor)
+vpn ro               # Conecta rapidamente à VPN RO (ou vpn connect ro)
+vpn sc               # Conecta rapidamente à VPN SC
+vpn off              # Desconecta a VPN ativa
+vpn status           # Exibe status detalhado da conexão ativa
+vpn add              # Wizard interativo para adicionar nova VPN (SNX ou IPsec)
+vpn remove <id>      # Remove uma VPN configurada
+```
+
+Aliases rápidos também continuam disponíveis:
+- `vpnro`, `vpnpr`, `vpnam`, `vpnsc`, `vpnto`, `vpnoff`, `vpnstatus`
 
 ### Via SAPA (egsys-tool)
 
 A SAPA verifica automaticamente se a VPN necessária está conectada:
 - Se estiver → libera acesso
-- Se não estiver → solicita que o usuário conecte pelo VPN Tray
+- Se não estiver → solicita que o usuário conecte pelo VPN Tray ou `vpn <estado>`
 
-## Arquitetura v2
+## Arquitetura Multi-Protocolo & Cross-Platform
 
 ```
-VPN Tray (bandeja)          Terminal (aliases)
-       │                           │
-       ▼                           ▼
-   snxctl connect/disconnect/status
-       │
-       ▼
-snx-rs (systemd service, -m command)
-       │
-       ▼
-Interface snx-xfrm + Rotas + DNS ✓
+     ┌───────────────────────┐         ┌──────────────────────┐
+     │  vpn-tray (Bandeja)   │         │  vpn CLI (Terminal)  │
+     │  Linux: Gtk/Ayatana   │         │  Linux & macOS       │
+     │  macOS: pystray/AppKit│         │                      │
+     └───────────┬───────────┘         └──────────┬───────────┘
+                 │                                │
+                 ▼                                ▼
+     ┌────────────────────────────────────────────────────────┐
+     │            core.vpn_manager (Camada Unificada)         │
+     └───────────────────┬────────────────────────┬───────────┘
+                         │                        │
+         ┌───────────────┴────────┐      ┌────────┴──────────────┐
+         ▼                        ▼      ▼                       ▼
+    [Check Point SNX]     [IPsec Linux] [Check Point macOS]  [IPsec macOS]
+      snxctl daemon        NetworkManager /   snx-rs /         scutil --nc /
+      systemd service       strongSwan      command mode       networksetup
 ```
 
 ## Adicionar nova VPN
 
-### Via VPN Tray
-Menu → ⚙ Configurar VPNs → Adicionar
-
-### Via Terminal
-Crie o arquivo `~/.config/snx-rs/vpnXX.conf`:
+### Via CLI Interativo (Recomendado)
+```bash
+vpn add
 ```
-server-name=SERVIDOR
+
+### Via VPN Tray
+Menu → ⚙ Configurar VPNs → Adicionar (Selecione o protocolo SNX ou IPsec)
+
+### Manualmente via Arquivo de Configuração
+Crie o arquivo `~/.config/snx-rs/vpnXX.conf` com permissão `0600`:
+
+**Formato Check Point (SNX):**
+```ini
+protocol=snx
+server-name=SERVIDOR_IP_OU_HOST
 user-name=USUARIO
 password=SENHA_EM_BASE64
 ignore-server-cert=true
 login-type=vpn
 ```
 
-Depois rode `./update.sh` para gerar aliases e conexões NM.
-
+**Formato IPsec (IKEv2):**
+```ini
+protocol=ipsec
+server-name=SERVIDOR_IP_OU_HOST
+user-name=USUARIO
+password=SENHA_EM_BASE64
+ipsec-type=ikev2
+routes=10.0.0.0/8,172.20.0.0/16
+```
 ## Dependências
 
 Instaladas automaticamente:

@@ -1,23 +1,22 @@
 # AGENTS.md — vpn-egsys
 
-`egSYS VPN Manager` — Suíte corporativa de automação, configuração, monitor de bandeja (vpn-tray),
-integração snxctl e gerenciamento de VPNs Check Point (snx-rs) para os estados atendidos pela egSYS
-(RO, PR, AM, SC, TO e demais).
+`egSYS VPN Manager` — Suíte corporativa de automação, configuração, monitor de bandeja (`vpn-tray`),
+CLI universal (`vpn`), suporte multi-protocolo (Check Point SNX e IPsec/IKEv2) e compatibilidade
+cross-platform (**Linux** e **macOS**).
 
 ## Regra de produto (anti-desvio — INEGOCIÁVEL)
-- **snx-rs em command mode** como padrão corporativo gerenciado por systemd (`snx-rs.service`).
-- Zero credenciais em claro no repositório. Arquivos de configuração `.conf` locais são gerados
-  exclusivamente em runtime sob `~/.config/snx-rs/` com permissão restrita e gitignored.
-- Multi-distro transparente (Ubuntu/Debian e Arch/CachyOS).
+- **Multi-Protocolo**: Suporte transparente a Check Point (`snx-rs` / `snxctl`) e IPsec (`strongSwan` / `NetworkManager` no Linux; `scutil --nc` / `networksetup` nativo no macOS).
+- **Cross-Platform**: Instalação e execução com 0 atrito em Linux (Debian, Ubuntu, Arch, CachyOS) e macOS (Intel e Apple Silicon M1/M2/M3/M4).
+- **Zero credenciais em claro no repositório**: Arquivos de configuração `.conf` locais são gerados
+  exclusivamente em runtime sob `~/.config/snx-rs/` com permissão estrita `0600` e gitignored.
 
 ## Comandos Operacionais
-- Instalação completa (host novo): `./install.sh`
-- Atualização e migração de VPNs: `./update.sh`
-- Setup por usuário (sem sudo): `./user-setup.sh`
-- Desinstalação: `./uninstall.sh`
-- Monitor de bandeja (Python 3 / PyGObject): `./vpn-tray`
-- Serviço snx-rs: `systemctl status snx-rs.service`
-- Controle CLI direto: `snxctl status`, `snxctl connect <vpn>`, `snxctl disconnect`
+- Quality Gate: `./run_tests.sh` (Bash -n + py_compile + unittest)
+- CLI Universal: `vpn list`, `vpn ro`, `vpn off`, `vpn status`, `vpn add`, `vpn remove`
+- Instalação: `./install.sh` (auto-detecta Linux vs macOS)
+- Atualização: `./update.sh`
+- Monitor de bandeja: `./vpn-tray` (Gtk/AppIndicator no Linux; pystray/AppKit no macOS)
+- Status do túnel ativo: `vpn status` ou `snxctl status`
 
 ## Git (dual-path, padrão Orion / Jiraview)
 - `origin` = empresa (sanitizado): `git@github.com:egsys-dev/vpn-egsys.git`
