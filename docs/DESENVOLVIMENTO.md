@@ -11,51 +11,65 @@ Este documento descreve a estrutura de desenvolvimento do **vpn-egsys**, incluin
 ```
 vpn-egsys/
 ├── README.md              # Documentação principal para usuários
-├── LICENSE               # Licença MIT
-├── package.json          # Placeholder para futuras dependências npm
-├── .gitignore            # Arquivos a serem ignorados pelo Git
+├── CHANGELOG.md           # Histórico formal de versões (Keep a Changelog)
+├── AGENTS.md              # Diretrizes canônicas para agentes e desenvolvedores
+├── LICENSE                # Licença MIT
+├── package.json           # Metadados do projeto
+├── .gitignore             # Travas de sanitização e proteção de credenciais
+├── run_tests.sh           # Runner do Quality Gate (Bash + py_compile + unittest)
 │
-├── install.sh            # Script de instalação (Bash)
-├── update.sh             # Gerenciador de VPNs (Bash)
-├── uninstall.sh          # Script de desinstalação (Bash)
-├── vpn-tray              # Monitor de bandeja (Python 3)
+├── vpn                    # CLI universal de terminal (Linux & macOS)
+├── vpn-tray               # Monitor de bandeja (GTK no Linux / pystray no macOS)
 │
-├── icons/                # Ícones SVG
+├── core/                  # Módulos Python unificados
+│   ├── __init__.py
+│   └── vpn_manager.py     # Driver de conectividade SNX e IPsec
+│
+├── tests/                 # Bateria de testes automatizados
+│   ├── test_vpn_manager.py
+│   ├── test_cli.py
+│   └── test_security_pentest.py # Suíte de Pentest Black Box (ACH-VPN-001 a 010)
+│
+├── macos/                 # Utilitários e serviços dedicados para macOS
+│   ├── install_macos.sh
+│   ├── setup_ipsec.sh
+│   └── com.egsys.vpn-tray.plist # LaunchAgent para autostart no login
+│
+├── install.sh             # Script de instalação universal (Linux e macOS)
+├── update.sh              # Gerenciador e migrador de VPNs
+├── uninstall.sh           # Script de desinstalação
+├── user-setup.sh          # Setup sem privilégios de administrador
+├── nm-snx-setup.sh        # Provisionador NetworkManager (SNX e StrongSwan)
+├── 99-snx-vpn.sh          # Dispatcher NetworkManager
+│
+├── icons/                 # Ícones SVG de status
 │   ├── vpn-connected.svg
 │   └── vpn-disconnected.svg
 │
-└── docs/                 # Documentação técnica
-    ├── ARQUITETURA.md    # Arquitetura do sistema
-    ├── INSTALAÇÃO.md     # Guia de instalação detalhado
-    ├── USO.md            # Manual de uso
+└── docs/                  # Documentação técnica Docs-as-Code
+    ├── ARQUITETURA.md     # Arquitetura do sistema
     ├── DESENVOLVIMENTO.md # Este arquivo
-    └── ROADMAP.md        # Plano de melhorias
+    ├── INSTALAÇÃO.md      # Guia de instalação detalhado
+    ├── IPSEC.md           # Manual do protocolo IPsec (IKEv2)
+    ├── MACOS.md           # Manual de instalação e uso no macOS
+    ├── ROADMAP.md         # Plano de evolução estratégica
+    ├── SECURITY.md        # Política de segurança e matriz de pentest
+    └── USO.md             # Manual de uso (CLI e Tray)
 ```
 
 ---
 
 ## Configuração do Ambiente de Desenvolvimento
 
-### Pré-requisitos
-
-| Ferramenta | Versão | Propósito |
-|-----------|--------|-----------|
-| Git | 2.0+ | Controle de versão |
-| Python 3 | 3.6+ | Execução do vpn-tray |
-| Bash | 4.0+ | Execução dos scripts |
-| GTK 3 | 3.0+ | Dependência do vpn-tray |
-| PyGObject | - | Bindings Python para GTK |
-| Ayatana AppIndicator | 0.1+ | Ícone na bandeja |
-
-### Clonar o Repositório
+### Clonar o Repositório (Dual-Path)
 
 ```bash
-# Clonar
-git clone https://github.com/andreprado-egsys/vpn-egsys.git
+# 1. Clonar repositório
+git clone git@github.com:egsys-dev/vpn-egsys.git
 cd vpn-egsys
 
-# Configurar upstream (opcional)
-git remote add upstream https://github.com/andreprado-egsys/vpn-egsys.git
+# 2. Configurar remote privado
+git remote add privado git@github.com:andreprado-egsys/vpn-egsys.git
 ```
 
 ### Instalar Dependências de Desenvolvimento

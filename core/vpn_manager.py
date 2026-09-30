@@ -77,6 +77,15 @@ def parse_vpn_config(filepath: str) -> Dict[str, str]:
     return data
 
 
+def sanitize_config_value(value: Any) -> str:
+    """Sanitiza strings de configuração removendo quebras de linha e caracteres de controle (CRLF Injection)."""
+    if value is None:
+        return ""
+    val_str = str(value)
+    # Remove terminadores de linha e caracteres de controle perigosos
+    return val_str.replace('\r', '').replace('\n', '').strip()
+
+
 def write_vpn_config(
     vpn_id: str,
     server: str,
@@ -88,28 +97,40 @@ def write_vpn_config(
     routes: str = '',
     extra_options: Optional[Dict[str, str]] = None
 ) -> str:
-    """Grava as configurações de uma VPN com permissão estrita 0600."""
+    """Grava as configurações de uma VPN com permissão estrita 0600 e sanitização defensiva."""
     cfg_dir = ensure_config_dir()
-    vpn_id = vpn_id.lower().replace(' ', '')
-    if not vpn_id.startswith('vpn'):
-        vpn_id = f'vpn{vpn_id}'
-    vpn_id = ''.join(c for c in vpn_id if c.isalnum())
+    vpn_id_raw = vpn_id.lower().replace(' ', '')
+    if not vpn_id_raw.startswith('vpn'):
+        vpn_id_raw = f'vpn{vpn_id_raw}'
+    vpn_id = ''.join(c for c in vpn_id_raw if c.isalnum())
+
+    if not vpn_id or vpn_id == 'vpn':
+        raise ValueError(f"Identificador de VPN inválido: '{vpn_id_raw}'")
+
+    # Sanitização contra CRLF injection em todos os campos
+    server_clean = sanitize_config_value(server)
+    user_clean = sanitize_config_value(user)
+    pass_clean = sanitize_config_value(password_b64)
+    proto_clean = sanitize_config_value(protocol).lower()
+    ipsec_type_clean = sanitize_config_value(ipsec_type).lower()
+    psk_clean = sanitize_config_value(psk_b64)
+    routes_clean = sanitize_config_value(routes)
 
     conf_path = os.path.join(cfg_dir, f'{vpn_id}.conf')
 
     lines = [
-        f'protocol={protocol}',
-        f'server-name={server}',
-        f'user-name={user}',
-        f'password={password_b64}',
+        f'protocol={proto_clean}',
+        f'server-name={server_clean}',
+        f'user-name={user_clean}',
+        f'password={pass_clean}',
     ]
 
-    if protocol == 'ipsec':
-        lines.append(f'ipsec-type={ipsec_type}')
-        if psk_b64:
-            lines.append(f'psk={psk_b64}')
-        if routes:
-            lines.append(f'routes={routes}')
+    if proto_clean == 'ipsec':
+        lines.append(f'ipsec-type={ipsec_type_clean}')
+        if psk_clean:
+            lines.append(f'psk={psk_clean}')
+        if routes_clean:
+            lines.append(f'routes={routes_clean}')
     else:
         # SNX defaults
         lines.append('ignore-server-cert=true')
@@ -117,7 +138,10 @@ def write_vpn_config(
 
     if extra_options:
         for k, v in extra_options.items():
-            lines.append(f'{k}={v}')
+            k_clean = sanitize_config_value(k)
+            v_clean = sanitize_config_value(v)
+            if k_clean:
+                lines.append(f'{k_clean}={v_clean}')
 
     with open(conf_path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines) + '\n')

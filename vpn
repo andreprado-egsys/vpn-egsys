@@ -87,10 +87,14 @@ def cmd_status(args) -> int:
 
 
 def cmd_connect(args) -> int:
-    """Conecta a uma VPN especificada."""
-    target = args.id.lower().strip()
-    if not target.startswith('vpn') and not target in ['off', 'status', 'list', 'add']:
-        target = f'vpn{target}'
+    """Conecta a uma VPN especificada com sanitização e validação estrita."""
+    raw_target = args.id.lower().strip()
+    clean_target = ''.join(c for c in raw_target if c.isalnum())
+    if not clean_target or clean_target != raw_target:
+        print(f"{RED}✗ Erro de segurança: Identificador inválido. Apenas caracteres alfanuméricos são permitidos.{NC}")
+        return 1
+
+    target = clean_target if clean_target.startswith('vpn') else f'vpn{clean_target}'
 
     print(f"Iniciando conexão para {CYAN}{target}{NC}...")
     ok, msg = connect_vpn(target)
@@ -180,10 +184,14 @@ def cmd_add(args) -> int:
 
 
 def cmd_remove(args) -> int:
-    """Remove uma VPN configurada."""
-    target = args.id.lower().strip()
-    if not target.startswith('vpn'):
-        target = f'vpn{target}'
+    """Remove uma VPN configurada com validação estrita."""
+    raw_target = args.id.lower().strip()
+    clean_target = ''.join(c for c in raw_target if c.isalnum())
+    if not clean_target or clean_target != raw_target:
+        print(f"{RED}✗ Erro de segurança: Identificador inválido. Apenas caracteres alfanuméricos são permitidos.{NC}")
+        return 1
+
+    target = clean_target if clean_target.startswith('vpn') else f'vpn{clean_target}'
 
     cfg_dir = get_config_dir()
     conf_file = os.path.join(cfg_dir, f'{target}.conf')

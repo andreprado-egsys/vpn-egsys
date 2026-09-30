@@ -2,12 +2,42 @@
 
 ## Visão Geral
 
-O **vpn-egsys** oferece duas formas principais de interação:
+O **vpn-egsys** oferece três formas integradas de interação em Linux e macOS:
 
 | Método | Descrição | Vantagens |
 |--------|-----------|-----------|
-| **Terminal (Aliases)** | Comandos rápidos no shell | Rápido, scriptável, familiar |
-| **Bandeja do Sistema** | Interface gráfica na bandeja | Visual, intuitivo, status em tempo real |
+| **CLI Universal (`vpn`)** | Utilitário moderno multiplataforma | Rápido, auto-explicativo, suporta SNX e IPsec |
+| **Terminal (Aliases)** | Atalhos diretos no shell (`vpnro`, `vpnsc`) | Familiaridade e agilidade em scripts |
+| **Bandeja do Sistema (`vpn-tray`)**| Interface gráfica na barra de status | Visual, intuitivo, status em tempo real |
+
+---
+
+## Uso Via CLI Universal (`vpn`)
+
+O comando `vpn` está disponível diretamente no terminal em Linux e macOS:
+
+```bash
+# 1. Listar todas as VPNs e seus protocolos
+vpn list
+
+# 2. Conectar rapidamente a um estado (Check Point ou IPsec)
+vpn ro       # Conecta à VPN Rondônia
+vpn sc       # Conecta à VPN Santa Catarina (IPsec)
+vpn pr       # Conecta à VPN Paraná
+vpn am       # Conecta à VPN Amazonas
+
+# 3. Verificar status detalhado da conexão ativa
+vpn status
+
+# 4. Desconectar qualquer túnel ativo
+vpn off
+
+# 5. Adicionar nova VPN interativamente (SNX ou IPsec)
+vpn add
+
+# 6. Remover uma VPN cadastrada
+vpn remove <id>
+```
 
 ---
 

@@ -6,50 +6,46 @@ Antes de iniciar a instalação, certifique-se de que seu sistema atende aos seg
 
 ### Requisitos do Sistema
 
-| Requisito | Versão Mínima | Verificação |
-|-----------|---------------|-------------|
-| **Sistema Operacional** | Linux (x86_64) | `uname -m` |
-| **Arquitetura** | x86_64 | `uname -m` |
+| Requisito | Versão Mínima | Plataforma |
+|-----------|---------------|------------|
+| **Sistema Operacional** | Linux (Debian, Ubuntu, Arch, CachyOS) ou macOS 12+ | Linux / macOS |
+| **Arquitetura** | x86_64 ou Apple Silicon (arm64 - M1/M2/M3/M4) | Todas |
 | **Git** | 2.0+ | `git --version` |
-| **curl** | Qualquer | `curl --version` |
-| **sudo** | Qualquer | `sudo --version` |
-| **Python** | 3.6+ | `python3 --version` |
-
-**Verificar arquitetura:**
-```bash
-uname -m
-# Deve retornara: x86_64
-```
-
-> ⚠️ **IMPORTANTE**: O projeto atualmente só tem suporte para arquitetura x86_64. Para ARM64, será necessário adaptar o script de instalação.
-
-### Espaço em Disco
-
-| Componente | Espaço Requerido |
-|------------|------------------|
-| Repositório vpn-egsys | ~1 MB |
-| snx-rs (binary) | ~5-10 MB |
-| Dependências | ~50-100 MB |
-| **Total** | **~60-110 MB** |
+| **Python** | 3.8+ | `python3 --version` |
 
 ---
 
 ## Métodos de Instalação
 
-### Método 1: Instalação Padrão (Recomendado)
-
-Este é o método mais simples e testado:
+### Instalação no Linux (Ubuntu, Debian, Arch, CachyOS)
 
 ```bash
-# 1. Clonar o repositório
-git clone https://github.com/andreprado-egsys/vpn-egsys.git
+# 1. Clonar o repositório oficial da empresa
+git clone git@github.com:egsys-dev/vpn-egsys.git
 
 # 2. Entrar no diretório
 cd vpn-egsys
 
-# 3. Executar o instalador
+# 3. Executar o instalador universal
+chmod +x install.sh
 ./install.sh
 ```
+
+### Instalação no macOS (Monterey, Ventura, Sonoma, Sequoia)
+
+O instalador detecta automaticamente o macOS e configura os LaunchAgents e binários:
+
+```zsh
+# 1. Clonar o repositório oficial
+git clone git@github.com:egsys-dev/vpn-egsys.git
+cd vpn-egsys
+
+# 2. Executar o instalador
+chmod +x install.sh
+./install.sh
+```
+
+Para mais detalhes da instalação no ecossistema Apple, consulte [`docs/MACOS.md`](MACOS.md).
 
 ### Método 2: Instalação com Git (Alternativo)
 
