@@ -2,3 +2,33 @@
 *.log
 __pycache__/
 *.pyc
+*.pyo
+
+# Sessão e Histórico Interno (Docs-as-Code)
+docs/SESSION_*
+docs/history.md
+docs/HISTORIA_*
+docs/CREDENCIAIS_*
+docs/GESTAO_CREDENCIAIS*
+docs/INC_RESPONSE_*
+docs/GUIA_INTERNO_*
+
+# Backups e Temporários
+*.bak*
+*.swp
+*~
+.DS_Store
+
+# Metadados de IA / Agentes / Harness
+.agent/
+.hermes/
+.kiro/
+.opencode/
+openspec/
+graphify-out/
+.ai_lessons_learned*
+LOGO_PROMPT*
+
+# Ambientes e Segredos
+.env*
+!.env.example

@@ -21,7 +21,7 @@ Monitor de bandeja, integração snxctl e utilitário de configuração para VPN
 ## Instalação (PC novo)
 
 ```bash
-git clone https://github.com/andreprado-egsys/vpn-egsys.git
+git clone git@github.com:egsys-dev/vpn-egsys.git
 cd vpn-egsys
 chmod +x install.sh
 ./install.sh
