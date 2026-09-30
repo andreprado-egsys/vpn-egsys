@@ -18,9 +18,12 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 SNX_RS_VERSION="6.0.6"
-CONFIG_DIR="$HOME/.config/snx-rs"
-LOCAL_BIN="$HOME/.local/bin"
-ICON_DIR="$HOME/.local/share/icons/vpn-egsys"
+TARGET_USER="${SUDO_USER:-$USER}"
+TARGET_HOME=$(getent passwd "$TARGET_USER" 2>/dev/null | cut -d: -f6)
+TARGET_HOME="${TARGET_HOME:-$HOME}"
+CONFIG_DIR="$TARGET_HOME/.config/snx-rs"
+LOCAL_BIN="$TARGET_HOME/.local/bin"
+ICON_DIR="$TARGET_HOME/.local/share/icons/vpn-egsys"
 
 info()  { echo -e "${GREEN}[✓]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
@@ -51,7 +54,7 @@ info "Privilégios de administrador obtidos."
 
 # --- 1. Parar tudo ---
 warn "Encerrando instâncias ativas..."
-killall vpn-tray 2>/dev/null || true
+pkill -f "vpn-tray" 2>/dev/null || true
 killall snx-rs 2>/dev/null || true
 sudo systemctl stop snx-rs.service 2>/dev/null || true
 sleep 1
@@ -171,24 +174,57 @@ setup_vpn_config() {
 
     echo -e "\n${BOLD}$label${NC}"
     if [ -f "$conf_file" ]; then
-        read -rp "Deseja atualizar credenciais? (s/N): " choice
+        local curr_proto=$(grep "^protocol=" "$conf_file" 2>/dev/null | cut -d= -f2 || echo "snx")
+        echo -e "Protocolo atual: ${CYAN}${curr_proto:-snx}${NC}"
+        read -rp "Deseja atualizar credenciais/protocolo? (s/N): " choice
         [[ "$choice" != "s" && "$choice" != "S" ]] && return
     fi
+
+    echo "Selecione o protocolo da VPN:"
+    echo "  1) Check Point SSL (SNX) [padrão]"
+    echo "  2) IPsec / IKEv2 (strongSwan)"
+    read -rp "Opção [1/2] (padrão: 1): " PROTO_OPT
+    local PROTO="snx"
+    if [[ "$PROTO_OPT" == "2" || "$PROTO_OPT" == "ipsec" ]]; then
+        PROTO="ipsec"
+    fi
+
     read -rp "Usuário $name: " USER_INPUT
     [ -z "$USER_INPUT" ] && warn "Pulando $label." && return
     read -rsp "Senha $name: " PASS_INPUT; echo ""
     [ -z "$PASS_INPUT" ] && warn "Pulando $label." && return
     PASS_B64=$(echo -n "$PASS_INPUT" | base64)
+
+    local extra_opts=""
+    if [ "$PROTO" = "ipsec" ]; then
+        read -rsp "Chave Pré-Compartilhada (PSK) [opcional, Enter para pular]: " PSK_INPUT; echo ""
+        if [ -n "$PSK_INPUT" ]; then
+            PSK_B64=$(echo -n "$PSK_INPUT" | base64)
+            extra_opts="psk=${PSK_B64}\n"
+        fi
+        read -rp "Rotas adicionais separadas por vírgula (ex: 10.0.0.0/8,172.16.0.0/12) [opcional]: " ROUTES_INPUT
+        if [ -n "$ROUTES_INPUT" ]; then
+            extra_opts="${extra_opts}routes=${ROUTES_INPUT}\n"
+        fi
+        extra_opts="${extra_opts}ipsec-type=ikev2"
+    else
+        extra_opts="ignore-server-cert=true\nlogin-type=vpn"
+        if [[ "$name" == "vpnam" ]]; then
+            extra_opts="${extra_opts}\nike-persist=true"
+        fi
+    fi
+
     mkdir -p "$CONFIG_DIR"
     cat > "$conf_file" <<EOF
+protocol=$PROTO
 server-name=$server
 user-name=${USER_INPUT}
 password=${PASS_B64}
-ignore-server-cert=true
-login-type=vpn
+$(echo -e "$extra_opts")
 EOF
     chmod 600 "$conf_file"
-    info "Credenciais $label atualizadas."
+    [ -n "$SUDO_USER" ] && chown "$TARGET_USER:$TARGET_USER" "$conf_file" 2>/dev/null || true
+    info "Credenciais $label [$PROTO] atualizadas com sucesso."
 }
 
 # Verifica se já existem configs
@@ -284,21 +320,26 @@ FUNC
     echo "$MARKER_END" >> "$shell_rc"
 }
 
-setup_aliases "$HOME/.bashrc"
-setup_aliases "$HOME/.zshrc"
+setup_aliases "$TARGET_HOME/.bashrc"
+setup_aliases "$TARGET_HOME/.zshrc"
 info "Aliases atualizados."
 
 # --- 12. Garantir ~/.local/bin no PATH ---
-if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
-    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+if ! echo "$PATH" | grep -q "$TARGET_HOME/.local/bin"; then
+    for rc in "$TARGET_HOME/.bashrc" "$TARGET_HOME/.zshrc"; do
         [ -f "$rc" ] && grep -q '.local/bin' "$rc" || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$rc"
     done
 fi
 
 # --- 13. Reiniciar tray ---
-nohup "$LOCAL_BIN/vpn-tray" > /dev/null 2>&1 &
-info "Monitor da bandeja reiniciado."
+pkill -f "vpn-tray" 2>/dev/null || true
+if [ -n "$SUDO_USER" ]; then
+    sudo -u "$TARGET_USER" DISPLAY="${DISPLAY:-:0}" DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS}" nohup "$LOCAL_BIN/vpn-tray" > /dev/null 2>&1 &
+else
+    nohup "$LOCAL_BIN/vpn-tray" > /dev/null 2>&1 &
+fi
+info "Monitor da bandeja reiniciado para o usuário $TARGET_USER."
 
-echo -e "\n${GREEN}${BOLD}✓ Migração para v2 concluída!${NC}"
-echo -e "${BOLD}VPNs agora visíveis no NetworkManager.${NC}"
-echo -e "Use: applet NM, terminal (vpnro/vpnpr/vpnam) ou tray icon.\n"
+echo -e "\n${GREEN}${BOLD}✓ Atualização concluída com sucesso!${NC}"
+echo -e "${BOLD}Suporte Multi-Protocolo (SNX & IPsec) ativo.${NC}"
+echo -e "Use: terminal (vpn list, vpn <estado>), NetworkManager ou ícone na bandeja.\n"

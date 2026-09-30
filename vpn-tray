@@ -117,12 +117,50 @@ def run_linux_tray():
             menu.append(self.status_item)
             menu.append(Gtk.SeparatorMenuItem())
 
-            for key, info in sorted(self.configs.items()):
-                label = info.get('label', key)
-                proto = info.get('protocol', 'snx').upper()
-                item = Gtk.MenuItem(label=f'Conectar {label} [{proto}]')
-                item.connect('activate', self.on_connect, key)
-                menu.append(item)
+            snx_vpns = {k: v for k, v in self.configs.items() if v.get('protocol', 'snx').lower() == 'snx'}
+            ipsec_vpns = {k: v for k, v in self.configs.items() if v.get('protocol', 'snx').lower() == 'ipsec'}
+
+            # --- SEÇÃO IPSEC / IKEv2 ---
+            header_ipsec = Gtk.MenuItem(label='── IPsec / IKEv2 ──')
+            header_ipsec.set_sensitive(False)
+            menu.append(header_ipsec)
+
+            if ipsec_vpns:
+                for key, info in sorted(ipsec_vpns.items()):
+                    label = info.get('label', key)
+                    item = Gtk.MenuItem(label=f'Conectar {label} [IPsec]')
+                    item.connect('activate', self.on_connect, key)
+                    menu.append(item)
+            else:
+                empty_ipsec = Gtk.MenuItem(label='  (Nenhum túnel IPsec configurado)')
+                empty_ipsec.set_sensitive(False)
+                menu.append(empty_ipsec)
+
+            add_ipsec_item = Gtk.MenuItem(label='  + Adicionar Conexão IPsec (IKEv2)...')
+            add_ipsec_item.connect('activate', lambda w: self.on_add_direct(default_proto='ipsec'))
+            menu.append(add_ipsec_item)
+
+            menu.append(Gtk.SeparatorMenuItem())
+
+            # --- SEÇÃO CHECK POINT SSL (SNX) ---
+            header_snx = Gtk.MenuItem(label='── Check Point SSL (SNX) ──')
+            header_snx.set_sensitive(False)
+            menu.append(header_snx)
+
+            if snx_vpns:
+                for key, info in sorted(snx_vpns.items()):
+                    label = info.get('label', key)
+                    item = Gtk.MenuItem(label=f'Conectar {label} [SNX]')
+                    item.connect('activate', self.on_connect, key)
+                    menu.append(item)
+            else:
+                empty_snx = Gtk.MenuItem(label='  (Nenhum túnel SNX configurado)')
+                empty_snx.set_sensitive(False)
+                menu.append(empty_snx)
+
+            add_snx_item = Gtk.MenuItem(label='  + Adicionar Conexão Check Point (SNX)...')
+            add_snx_item.connect('activate', lambda w: self.on_add_direct(default_proto='snx'))
+            menu.append(add_snx_item)
 
             menu.append(Gtk.SeparatorMenuItem())
 
@@ -132,7 +170,7 @@ def run_linux_tray():
 
             menu.append(Gtk.SeparatorMenuItem())
 
-            config_item = Gtk.MenuItem(label='⚙ Configurar VPNs...')
+            config_item = Gtk.MenuItem(label='⚙ Configurar VPNs (SNX & IPsec)...')
             config_item.connect('activate', self.on_configure)
             menu.append(config_item)
 
@@ -165,13 +203,20 @@ def run_linux_tray():
         def on_disconnect(self, widget):
             disconnect_all()
 
+        def on_add_direct(self, default_proto='ipsec'):
+            """Abre direto o diálogo de adicionar nova VPN com protocolo pré-selecionado."""
+            self.show_vpn_dialog(default_proto=default_proto)
+
         def on_configure(self, widget):
-            dialog = Gtk.Dialog(title="Configurar VPNs (egSYS)", flags=0)
-            dialog.set_default_size(500, 480)
+            self.show_management_dialog()
+
+        def show_management_dialog(self):
+            dialog = Gtk.Dialog(title="Gerenciador de VPNs (egSYS)", flags=0)
+            dialog.set_default_size(520, 500)
             box = dialog.get_content_area()
 
             # Lista de VPNs existentes
-            frame = Gtk.Frame(label="VPNs configuradas")
+            frame = Gtk.Frame(label="VPNs Configuradas")
             listbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
             listbox.set_margin_top(10)
             listbox.set_margin_bottom(10)
@@ -179,13 +224,19 @@ def run_linux_tray():
             listbox.set_margin_end(10)
 
             if not self.configs:
-                listbox.pack_start(Gtk.Label(label="Nenhuma VPN configurada"), False, False, 0)
+                listbox.pack_start(Gtk.Label(label="Nenhuma VPN configurada."), False, False, 0)
 
             for key, info in sorted(self.configs.items()):
-                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
                 lbl = info.get('label', key)
                 proto = info.get('protocol', 'snx').upper()
-                row.pack_start(Gtk.Label(label=f"{lbl} [{proto}]", xalign=0), True, True, 0)
+                proto_badge = f"[{proto}]"
+                lbl_widget = Gtk.Label(label=f"<b>{lbl}</b>  <small>{proto_badge}</small>", use_markup=True, xalign=0)
+                row.pack_start(lbl_widget, True, True, 0)
+
+                btn_conn = Gtk.Button(label="Conectar")
+                btn_conn.connect('clicked', lambda w, k=key: (connect_vpn(k), dialog.destroy()))
+                row.pack_end(btn_conn, False, False, 0)
 
                 btn_edit = Gtk.Button(label="Editar")
                 btn_edit.connect('clicked', self.on_edit_vpn, key, dialog)
@@ -198,163 +249,213 @@ def run_linux_tray():
                 listbox.pack_start(row, False, False, 0)
 
             frame.add(listbox)
-            box.pack_start(frame, True, True, 10)
+            box.pack_start(frame, True, True, 8)
 
-            # Seção Adicionar
-            frame2 = Gtk.Frame(label="Adicionar nova VPN")
-            grid = Gtk.Grid(column_spacing=10, row_spacing=5)
-            grid.set_margin_top(10)
-            grid.set_margin_bottom(10)
-            grid.set_margin_start(10)
-            grid.set_margin_end(10)
+            # Botões de Adicionar
+            btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            btn_box.set_margin_top(5)
+            btn_box.set_margin_bottom(10)
+            btn_box.set_margin_start(10)
+            btn_box.set_margin_end(10)
 
-            # Protocolo
-            grid.attach(Gtk.Label(label="Protocolo:", xalign=0), 0, 0, 1, 1)
-            self.combo_proto = Gtk.ComboBoxText()
-            self.combo_proto.append('snx', 'Check Point SSL (SNX)')
-            self.combo_proto.append('ipsec', 'IPsec / IKEv2')
-            self.combo_proto.set_active(0)
-            grid.attach(self.combo_proto, 1, 0, 1, 1)
+            btn_add_ipsec = Gtk.Button(label="+ Adicionar Nova VPN IPsec / IKEv2")
+            btn_add_ipsec.connect('clicked', lambda w: (dialog.destroy(), self.show_vpn_dialog(default_proto='ipsec')))
+            btn_box.pack_start(btn_add_ipsec, True, True, 0)
 
-            # Identificador
-            grid.attach(Gtk.Label(label="Estado / ID (ex: ro, pr, am, sc):", xalign=0), 0, 1, 1, 1)
-            self.entry_id = Gtk.Entry()
-            self.entry_id.set_placeholder_text("ro, pr, am, sc, to...")
-            grid.attach(self.entry_id, 1, 1, 1, 1)
+            btn_add_snx = Gtk.Button(label="+ Adicionar Nova VPN Check Point (SNX)")
+            btn_add_snx.connect('clicked', lambda w: (dialog.destroy(), self.show_vpn_dialog(default_proto='snx')))
+            btn_box.pack_start(btn_add_snx, True, True, 0)
 
-            # Servidor
-            grid.attach(Gtk.Label(label="Servidor / Gateway:", xalign=0), 0, 2, 1, 1)
-            self.entry_server = Gtk.Entry()
-            self.entry_server.set_placeholder_text("IP ou Hostname")
-            grid.attach(self.entry_server, 1, 2, 1, 1)
+            box.pack_start(btn_box, False, False, 0)
 
-            # Usuário
-            grid.attach(Gtk.Label(label="Usuário:", xalign=0), 0, 3, 1, 1)
-            self.entry_user = Gtk.Entry()
-            grid.attach(self.entry_user, 1, 3, 1, 1)
-
-            # Senha
-            grid.attach(Gtk.Label(label="Senha:", xalign=0), 0, 4, 1, 1)
-            self.entry_pass = Gtk.Entry()
-            self.entry_pass.set_visibility(False)
-            grid.attach(self.entry_pass, 1, 4, 1, 1)
-
-            # Rotas opcionais
-            grid.attach(Gtk.Label(label="Rotas (opcional):", xalign=0), 0, 5, 1, 1)
-            self.entry_routes = Gtk.Entry()
-            self.entry_routes.set_placeholder_text("ex: 10.0.0.0/8, 172.23.0.0/16")
-            grid.attach(self.entry_routes, 1, 5, 1, 1)
-
-            btn_add = Gtk.Button(label="Adicionar VPN")
-            btn_add.connect('clicked', self.on_add_vpn, dialog)
-            grid.attach(btn_add, 1, 6, 1, 1)
-
-            frame2.add(grid)
-            box.pack_start(frame2, False, False, 10)
-
+            dialog.add_button("Fechar", Gtk.ResponseType.CLOSE)
             dialog.show_all()
             dialog.run()
             dialog.destroy()
 
-        def on_add_vpn(self, widget, dialog):
-            raw_id = self.entry_id.get_text().strip().lower().replace(' ', '')
-            server = self.entry_server.get_text().strip()
-            user = self.entry_user.get_text().strip()
-            passwd = self.entry_pass.get_text().strip()
-            protocol = self.combo_proto.get_active_id() or 'snx'
-            routes = self.entry_routes.get_text().strip()
-
-            if not all([raw_id, server, user, passwd]):
-                return
-
-            import base64
-            pass_b64 = base64.b64encode(passwd.encode()).decode()
-
-            extra_opts = {}
-            if raw_id in ['am', 'vpnam'] and protocol == 'snx':
-                extra_opts['ike-persist'] = 'true'
-
-            write_vpn_config(
-                vpn_id=raw_id,
-                server=server,
-                user=user,
-                password_b64=pass_b64,
-                protocol=protocol,
-                routes=routes,
-                extra_options=extra_opts
-            )
-
-            self.configs = discover_vpns()
-            self.build_menu()
-            dialog.destroy()
-            self.on_configure(None)
-
-        def on_edit_vpn(self, widget, key, parent_dialog):
-            cfg_dir = get_config_dir()
-            conf_path = os.path.join(cfg_dir, f'{key}.conf')
-            if not os.path.exists(conf_path):
-                return
-
-            current = parse_vpn_config(conf_path)
-
-            dialog = Gtk.Dialog(title=f"Editar {key}", flags=0)
-            dialog.set_default_size(380, 240)
+        def show_vpn_dialog(self, default_proto='ipsec', vpn_key=None):
+            """Diálogo completo de Adicionar ou Editar VPN com campos dinâmicos por protocolo."""
+            is_edit = vpn_key is not None
+            title = f"Editar VPN: {vpn_key}" if is_edit else "Adicionar Nova VPN (egSYS)"
+            dialog = Gtk.Dialog(title=title, flags=0)
+            dialog.set_default_size(460, 360)
             box = dialog.get_content_area()
-            grid = Gtk.Grid(column_spacing=10, row_spacing=5)
-            grid.set_margin_top(10)
-            grid.set_margin_bottom(10)
-            grid.set_margin_start(10)
-            grid.set_margin_end(10)
 
-            grid.attach(Gtk.Label(label="Servidor:", xalign=0), 0, 0, 1, 1)
+            grid = Gtk.Grid(column_spacing=10, row_spacing=8)
+            grid.set_margin_top(15)
+            grid.set_margin_bottom(15)
+            grid.set_margin_start(15)
+            grid.set_margin_end(15)
+
+            current_data = {}
+            if is_edit:
+                cfg_dir = get_config_dir()
+                conf_path = os.path.join(cfg_dir, f'{vpn_key}.conf')
+                if os.path.exists(conf_path):
+                    current_data = parse_vpn_config(conf_path)
+
+            row = 0
+
+            # 1. Preset / Modelos rápidos (apenas em modo adicionar)
+            combo_preset = None
+            if not is_edit:
+                grid.attach(Gtk.Label(label="<b>Modelo Rápido:</b>", use_markup=True, xalign=0), 0, row, 1, 1)
+                combo_preset = Gtk.ComboBoxText()
+                combo_preset.append('custom', 'Personalizado')
+                combo_preset.append('sc', 'Santa Catarina (SC) — IPsec / IKEv2')
+                combo_preset.append('to', 'Tocantins (TO) — IPsec / IKEv2')
+                combo_preset.append('ro', 'Rondônia (RO) — Check Point SNX')
+                combo_preset.append('pr', 'Paraná (PR) — Check Point SNX')
+                combo_preset.append('am', 'Amazonas (AM) — Check Point SNX')
+                combo_preset.set_active(0)
+                grid.attach(combo_preset, 1, row, 1, 1)
+                row += 1
+
+            # 2. Protocolo
+            grid.attach(Gtk.Label(label="<b>Protocolo:</b>", use_markup=True, xalign=0), 0, row, 1, 1)
+            combo_proto = Gtk.ComboBoxText()
+            combo_proto.append('ipsec', 'IPsec / IKEv2 (strongSwan)')
+            combo_proto.append('snx', 'Check Point SSL (SNX)')
+            init_proto = current_data.get('protocol', default_proto).lower()
+            combo_proto.set_active(0 if init_proto == 'ipsec' else 1)
+            grid.attach(combo_proto, 1, row, 1, 1)
+            row += 1
+
+            # 3. Identificador
+            grid.attach(Gtk.Label(label="Estado / ID (ex: sc, ro, pr):", xalign=0), 0, row, 1, 1)
+            entry_id = Gtk.Entry()
+            if is_edit:
+                entry_id.set_text(vpn_key)
+                entry_id.set_sensitive(False)
+            else:
+                entry_id.set_placeholder_text("sc, ro, pr, am, to...")
+            grid.attach(entry_id, 1, row, 1, 1)
+            row += 1
+
+            # 4. Servidor
+            grid.attach(Gtk.Label(label="Servidor / Gateway:", xalign=0), 0, row, 1, 1)
             entry_srv = Gtk.Entry()
-            entry_srv.set_text(current.get('server-name', ''))
-            grid.attach(entry_srv, 1, 0, 1, 1)
+            entry_srv.set_text(current_data.get('server-name', ''))
+            entry_srv.set_placeholder_text("IP ou Hostname do gateway")
+            grid.attach(entry_srv, 1, row, 1, 1)
+            row += 1
 
-            grid.attach(Gtk.Label(label="Usuário:", xalign=0), 0, 1, 1, 1)
+            # 5. Usuário
+            grid.attach(Gtk.Label(label="Usuário:", xalign=0), 0, row, 1, 1)
             entry_usr = Gtk.Entry()
-            entry_usr.set_text(current.get('user-name', ''))
-            grid.attach(entry_usr, 1, 1, 1, 1)
+            entry_usr.set_text(current_data.get('user-name', ''))
+            grid.attach(entry_usr, 1, row, 1, 1)
+            row += 1
 
-            grid.attach(Gtk.Label(label="Senha (nova):", xalign=0), 0, 2, 1, 1)
+            # 6. Senha
+            grid.attach(Gtk.Label(label="Senha:", xalign=0), 0, row, 1, 1)
             entry_pwd = Gtk.Entry()
             entry_pwd.set_visibility(False)
-            entry_pwd.set_placeholder_text("deixe vazio para manter")
-            grid.attach(entry_pwd, 1, 2, 1, 1)
+            if is_edit:
+                entry_pwd.set_placeholder_text("deixe vazio para manter atual")
+            grid.attach(entry_pwd, 1, row, 1, 1)
+            row += 1
 
-            grid.attach(Gtk.Label(label="Rotas:", xalign=0), 0, 3, 1, 1)
+            # 7. PSK (Pre-Shared Key - IPsec)
+            lbl_psk = Gtk.Label(label="Chave PSK (IPsec):", xalign=0)
+            entry_psk = Gtk.Entry()
+            entry_psk.set_visibility(False)
+            entry_psk.set_placeholder_text("Chave pré-compartilhada (opcional)")
+            grid.attach(lbl_psk, 0, row, 1, 1)
+            grid.attach(entry_psk, 1, row, 1, 1)
+            row += 1
+
+            # 8. Rotas
+            lbl_routes = Gtk.Label(label="Rotas adicionais:", xalign=0)
             entry_routes = Gtk.Entry()
-            entry_routes.set_text(current.get('routes', ''))
-            grid.attach(entry_routes, 1, 3, 1, 1)
+            entry_routes.set_text(current_data.get('routes', ''))
+            entry_routes.set_placeholder_text("ex: 10.0.0.0/8, 172.23.0.0/16")
+            grid.attach(lbl_routes, 0, row, 1, 1)
+            grid.attach(entry_routes, 1, row, 1, 1)
+            row += 1
 
-            box.add(grid)
+            def update_fields_visibility():
+                proto = combo_proto.get_active_id() or 'ipsec'
+                is_ipsec_sel = (proto == 'ipsec')
+                lbl_psk.set_visible(is_ipsec_sel)
+                entry_psk.set_visible(is_ipsec_sel)
+
+            combo_proto.connect('changed', lambda w: update_fields_visibility())
+            update_fields_visibility()
+
+            # Preset handler
+            if combo_preset:
+                def on_preset_changed(combo):
+                    pid = combo.get_active_id()
+                    if pid == 'sc':
+                        combo_proto.set_active_id('ipsec')
+                        entry_id.set_text('sc')
+                    elif pid == 'to':
+                        combo_proto.set_active_id('ipsec')
+                        entry_id.set_text('to')
+                    elif pid == 'ro':
+                        combo_proto.set_active_id('snx')
+                        entry_id.set_text('ro')
+                        entry_srv.set_text('131.72.155.42')
+                    elif pid == 'pr':
+                        combo_proto.set_active_id('snx')
+                        entry_id.set_text('pr')
+                        entry_srv.set_text('acessoremoto.pr.gov.br')
+                    elif pid == 'am':
+                        combo_proto.set_active_id('snx')
+                        entry_id.set_text('am')
+                        entry_srv.set_text('sslvpn.prodam.am.gov.br')
+                    update_fields_visibility()
+
+                combo_preset.connect('changed', on_preset_changed)
+
+            box.pack_start(grid, True, True, 0)
             dialog.add_button("Cancelar", Gtk.ResponseType.CANCEL)
-            dialog.add_button("Salvar", Gtk.ResponseType.OK)
+            dialog.add_button("Salvar VPN", Gtk.ResponseType.OK)
             dialog.show_all()
+            update_fields_visibility()
 
-            response = dialog.run()
-            if response == Gtk.ResponseType.OK:
-                import base64
-                server = entry_srv.get_text().strip() or current.get('server-name', '')
-                user = entry_usr.get_text().strip() or current.get('user-name', '')
-                new_pass = entry_pwd.get_text().strip()
-                pass_b64 = base64.b64encode(new_pass.encode()).decode() if new_pass else current.get('password', '')
+            resp = dialog.run()
+            if resp == Gtk.ResponseType.OK:
+                raw_id = entry_id.get_text().strip().lower().replace(' ', '')
+                server = entry_srv.get_text().strip() or current_data.get('server-name', '')
+                user = entry_usr.get_text().strip() or current_data.get('user-name', '')
+                pwd = entry_pwd.get_text().strip()
+                protocol = combo_proto.get_active_id() or 'snx'
+                psk = entry_psk.get_text().strip()
                 routes = entry_routes.get_text().strip()
 
-                write_vpn_config(
-                    vpn_id=key,
-                    server=server,
-                    user=user,
-                    password_b64=pass_b64,
-                    protocol=current.get('protocol', 'snx'),
-                    routes=routes
-                )
+                import base64
+                if pwd:
+                    pass_b64 = base64.b64encode(pwd.encode()).decode()
+                else:
+                    pass_b64 = current_data.get('password', '')
+
+                psk_b64 = base64.b64encode(psk.encode()).decode() if psk else current_data.get('psk', '')
+
+                extra_opts = {}
+                if raw_id in ['am', 'vpnam'] and protocol == 'snx':
+                    extra_opts['ike-persist'] = 'true'
+
+                if raw_id and server and user and (pass_b64 or pwd):
+                    write_vpn_config(
+                        vpn_id=raw_id,
+                        server=server,
+                        user=user,
+                        password_b64=pass_b64,
+                        protocol=protocol,
+                        psk_b64=psk_b64,
+                        routes=routes,
+                        extra_options=extra_opts
+                    )
 
             dialog.destroy()
-            parent_dialog.destroy()
             self.configs = discover_vpns()
             self.build_menu()
-            self.on_configure(None)
+
+        def on_edit_vpn(self, widget, key, parent_dialog):
+            parent_dialog.destroy()
+            self.show_vpn_dialog(vpn_key=key)
 
         def on_remove_vpn(self, widget, key, dialog):
             cfg_dir = get_config_dir()
@@ -369,7 +470,7 @@ def run_linux_tray():
             self.configs = discover_vpns()
             self.build_menu()
             dialog.destroy()
-            self.on_configure(None)
+            self.show_management_dialog()
 
         def on_quit(self, widget):
             Gtk.main_quit()

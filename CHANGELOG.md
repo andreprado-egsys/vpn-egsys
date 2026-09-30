@@ -6,6 +6,23 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ---
 
+## [2.1.1] - 2026-09-30
+
+### Adicionado
+- **Presets Estaduais e Gestão Integrada na Bandeja (`vpn-tray`)**:
+  - Seletor de presets rápidos cobrindo **SC (IPsec), TO (IPsec), RO (SNX 131.72.155.42), PR (SNX acessoremoto.pr.gov.br) e AM (SNX sslvpn.prodam.am.gov.br)**.
+  - Alternância reativa da interface gráfica: os campos específicos de IPsec (Chave PSK e Rotas adicionais) alternam sua visibilidade instantaneamente ao mudar o protocolo.
+  - Diálogo de gerenciamento `show_management_dialog` para adicionar, editar credenciais e remover conexões diretamente pela GUI.
+  - Injeção automática de `ike-persist=true` para perfis do Amazonas (`am` / `vpnam`).
+
+### Corrigido
+- **Hardening Multi-Usuário em Execuções com Sudo (`install.sh`, `update.sh`, `user-setup.sh`)**:
+  - Resolução segura do usuário real via `TARGET_USER="${SUDO_USER:-$USER}"` e home canônico via `getent passwd`.
+  - Delegação de execução do `vpn-tray` na sessão gráfica do usuário (`sudo -u "$TARGET_USER" DISPLAY=... DBUS_SESSION_BUS_ADDRESS=... nohup ...`), eliminando a execução acidental da bandeja como `root`.
+  - Encerramento confiável de instâncias antigas com `pkill -f "vpn-tray"` e aplicação de `chown "$TARGET_USER:$TARGET_USER"` em arquivos gerados.
+
+---
+
 ## [2.1.0] - 2026-09-30 (Jira PSEI-336)
 
 ### Adicionado

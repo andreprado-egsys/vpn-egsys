@@ -182,58 +182,55 @@ O **vpn-tray** exibe um ícone na bandeja do sistema com as seguintes caracterí
 Ao clicar no ícone, o seguinte menu é exibido:
 
 ```
-╔══════════════════════════╗
-║ ✓ VPN AM - Amazonas (sslvpn.prodam.am.gov.br)  ║ ← Status atual
-╠══════════════════════════╣
-║ ------------------------------------------ ║
-║ Conectar VPN AM - Amazonas (sslvpn.prod... ║
-║ Conectar VPN PR - Paraná (acessoremoto.p... ║
-║ Conectar VPN RO - Rondônia (131.72.155.42) ║
-║ ------------------------------------------ ║
-║ Desconectar                              ║
-║ ------------------------------------------ ║
-║ Sair                                    ║
-╚══════════════════════════╝
+╔═════════════════════════════════════════════════════╗
+║ ✓ VPN RO - Rondônia (131.72.155.42) [SNX]          ║ ← Status atual
+╠═════════════════════════════════════════════════════╣
+║ --------------------------------------------------- ║
+║ [SNX]   Conectar VPN RO - Rondônia (131.72.155.42)  ║
+║ [SNX]   Conectar VPN PR - Paraná (acessoremoto...)  ║
+║ [SNX]   Conectar VPN AM - Amazonas (sslvpn.prod...) ║
+║ [IPsec] Conectar VPN SC - Santa Catarina            ║
+║ [IPsec] Conectar VPN TO - Tocantins                 ║
+║ --------------------------------------------------- ║
+║ Desconectar                                         ║
+║ --------------------------------------------------- ║
+║ ➕ Adicionar VPN...                                  ║ ← Diálogo com Presets e Protocolos
+║ ⚙ Gerenciar VPNs...                                 ║ ← Edição de credenciais e remoção
+║ --------------------------------------------------- ║
+║ Sair                                                ║
+╚═════════════════════════════════════════════════════╝
 ```
 
 ### Ações do Menu
 
 | Item | Ação | Descrição |
 |------|------|-----------|
-| **Status** | - | Mostra estado atual (desabilitado) |
-| **Conectar {VPN}** | `on_connect()` | Conecta à VPN especificada |
+| **Status** | - | Mostra estado atual e protocolo conectado |
+| **Conectar {VPN}** | `on_connect()` | Conecta à VPN especificada (SNX ou IPsec) |
 | **Desconectar** | `on_disconnect()` | Desconecta a VPN ativa |
+| **➕ Adicionar VPN...** | `show_vpn_dialog()` | Abre diálogo visual com presets de estados (SC, TO, RO, PR, AM) e seletor SNX/IPsec |
+| **⚙ Gerenciar VPNs...** | `show_management_dialog()`| Lista túneis cadastrados com botões para Editar credenciais ou Remover |
 | **Sair** | `on_quit()` | Encerra o vpn-tray |
 
 ### Como Usar
 
 #### Conectar a uma VPN
-
 1. Clique no ícone da bandeja
-2. Selecione "Conectar {Nome da VPN}"
-3. Aguarde alguns segundos
-4. O ícone mudará para conectado ✓
-5. O tooltip mostrará "VPN: {Nome da VPN}"
+2. Selecione a VPN desejada (ex: `[IPsec] Conectar VPN SC` ou `[SNX] Conectar VPN RO`)
+3. O ícone mudará para conectado ✓ e o tooltip exibirá o estado ativo.
 
 #### Desconectar
-
 1. Clique no ícone da bandeja
 2. Selecione "Desconectar"
-3. Aguarde ~1 segundo
-4. O ícone mudará para desconectado ✗
-5. O tooltip mostrará "VPN Desconectada"
+3. O túnel será encerrado de forma limpa.
 
-#### Verificar Status
+#### Adicionar / Configurar via Interface Gráfica
+1. Clique no ícone da bandeja e selecione **➕ Adicionar VPN...**
+2. (Opcional) Escolha um **Preset de Estado** (`SC`, `TO`, `RO`, `PR` ou `AM`) para preencher automaticamente o protocolo e o gateway padrão.
+3. Se selecionar **IPsec**, os campos de **Chave PSK** e **Rotas adicionais** tornam-se visíveis reativamente.
+4. Preencha usuário e senha e clique em **Salvar VPN**. O novo túnel aparecerá imediatamente no menu e no terminal (`vpn list`).
 
-- Passe o mouse sobre o ícone para ver o tooltip
-- O tooltip mostra o status atual
-
-#### Fechar o Monitor
-
-1. Clique no ícone da bandeja
-2. Selecione "Sair"
-
-> ⚠️ **Nota**: Fechar o vpn-tray não desconecta a VPN ativa. Use "Desconectar" ou `vpnoff` primeiro.
+> ⚠️ **Nota**: Fechar o vpn-tray não desconecta a VPN ativa. Use "Desconectar" ou `vpn off` primeiro.
 
 ---
 

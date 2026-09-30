@@ -52,8 +52,8 @@ Para mais detalhes da instalação no ecossistema Apple, consulte [`docs/MACOS.m
 Se preferir não clonar todo o repositório:
 
 ```bash
-# Baixar apenas o instalador
-curl -fSL -o install.sh https://raw.githubusercontent.com/andreprado-egsys/vpn-egsys/main/install.sh
+# Baixar apenas o instalador do repositório oficial
+curl -fSL -o install.sh https://raw.githubusercontent.com/egsys-dev/vpn-egsys/main/install.sh
 
 # Tornar executável
 chmod +x install.sh
@@ -62,7 +62,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-> ⚠️ **Nota**: Este método não Baixa os ícones e o vpn-tray. Você precisará baixá-los manualmente.
+> 💡 **Nota de Segurança**: Se o script for executado com `sudo ./install.sh`, o instalador detecta automaticamente a variável `$SUDO_USER` e o home do usuário não-root original, garantindo que as configurações de VPN (`~/.config/snx-rs`), atalhos e o autostart do `vpn-tray` sejam instalados para o seu usuário e executados sob sua sessão gráfica (e não sob o usuário `root`).
 
 ---
 

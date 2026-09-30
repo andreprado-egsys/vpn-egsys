@@ -1,13 +1,17 @@
-# vpn-egsys v2.1 (Multi-Protocolo & Cross-Platform)
+# vpn-egsys v2.1 (Multi-Protocolo, Presets Estaduais & Cross-Platform)
 
 Gerenciador universal de VPNs, monitor de bandeja (`vpn-tray`), utilitário de terminal (`vpn`) e integração com **Check Point (SNX via `snx-rs`)** e **IPsec (IKEv2)** para estações **Linux** e **macOS**.
 
-## Novidades v2.1
+## Novidades v2.1.1
+- **Presets Estaduais Rápidos na Bandeja (`vpn-tray`)**: Configuração em um clique para Santa Catarina (SC), Tocantins (TO), Rondônia (RO), Paraná (PR) e Amazonas (AM).
+- **Interface Reativa Multi-Protocolo**: Alternância automática de visibilidade para campos de IPsec (Chave PSK e Rotas customizadas).
+- **Hardening Multi-Usuário (`SUDO_USER`)**: Execuções com `sudo` isolam o home do usuário real e inicializam a bandeja na sessão gráfica correta (sem rodar como root).
+- **Bateria de Pentest Black Box (ACH-VPN-001..010)**: 100% de conformidade com testes de injeção, caminhos e sanitização estrita.
 - **Suporte Multi-Protocolo**: Check Point SSL Network Extender (SNX) e IPsec (IKEv2).
 - **Suporte Cross-Platform**: Linux (Ubuntu, Debian, Arch, CachyOS) e macOS (Monterey, Ventura, Sonoma, Sequoia - Intel & Apple Silicon).
 - **CLI Universal `vpn`**: comandos rápidos no terminal (`vpn list`, `vpn ro`, `vpn off`, `vpn status`, `vpn add`).
 - **Tray Nativo macOS**: compatibilidade com a barra de menus do macOS via `pystray` / AppKit nativo e LaunchAgent `launchd`.
-- **Suíte de Testes Automatizados**: testes unitários de configuração e CLI (`./run_tests.sh`).
+- **Suíte de Testes Automatizados**: testes unitários de configuração, segurança e CLI (`./run_tests.sh`).
 - **snx-rs em command mode** — roda como serviço systemd no Linux com restart automático.
 - **Conexão síncrona** — sem delay de rotas/DNS; reporta com precisão quando tudo está pronto.
 
@@ -150,17 +154,12 @@ chmod +x uninstall.sh
 
 ## Troubleshooting
 
-### VPN PRODAM/AM desconecta após poucos segundos
-O gateway da PRODAM pode bloquear pacotes keepalive. A config `vpnam.conf` já inclui automaticamente:
-```
-no-keepalive=true
+### VPN PRODAM/AM (Amazonas)
+A VPN do Amazonas utiliza gateway Check Point com singularidades de timeout de IKE. A configuração `vpnam.conf` gerencia nativamente:
+```ini
 ike-persist=true
 ```
-Se já tinha a config antiga, aplique manualmente:
-```bash
-echo -e "no-keepalive=true\nike-persist=true" >> ~/.config/snx-rs/vpnam.conf
-```
-Se ainda não estabilizar, tente adicionar `tunnel-type=ssl` na config.
+> ⚠️ **Atenção**: O parâmetro `no-keepalive=true` foi descontinuado e removido na v2.1.0 pois causava queda de rotas internas da PRODAM (`172.23.x.x`). Apenas `ike-persist=true` deve ser mantido. Se a sua conexão antiga possuir `no-keepalive`, remova essa linha.
 
 ### VPN Tray não aparece (GNOME)
 ```bash
