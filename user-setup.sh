@@ -67,32 +67,56 @@ setup_vpn_config() {
 
     echo -e "\n${BOLD}$label${NC}"
     if [ -f "$conf_file" ]; then
+        local curr_proto=$(grep "^protocol=" "$conf_file" 2>/dev/null | cut -d= -f2 || echo "snx")
+        echo -e "Protocolo atual: ${CYAN}${curr_proto:-snx}${NC}"
         read -rp "Já configurada. Deseja redefinir? (s/N): " choice
         [[ "$choice" != "s" && "$choice" != "S" ]] && return
     fi
+
+    echo "Selecione o protocolo da VPN:"
+    echo "  1) Check Point SSL (SNX) [padrão]"
+    echo "  2) IPsec / IKEv2 (strongSwan)"
+    read -rp "Opção [1/2] (padrão: 1): " PROTO_OPT
+    local PROTO="snx"
+    if [[ "$PROTO_OPT" == "2" || "$PROTO_OPT" == "ipsec" ]]; then
+        PROTO="ipsec"
+    fi
+
     read -rp "Usuário: " USER_INPUT
     [ -z "$USER_INPUT" ] && warn "Pulando $label." && return
     read -rsp "Senha: " PASS_INPUT; echo ""
     [ -z "$PASS_INPUT" ] && warn "Pulando $label." && return
     PASS_B64=$(echo -n "$PASS_INPUT" | base64)
-    mkdir -p "$CONFIG_DIR"
 
-    # Opções extras para VPNs instáveis (PRODAM/AM)
     local extra_opts=""
-    if [[ "$name" == "vpnam" ]]; then
-        extra_opts="ike-persist=true"
+    if [ "$PROTO" = "ipsec" ]; then
+        read -rsp "Chave Pré-Compartilhada (PSK) [opcional, Enter para pular]: " PSK_INPUT; echo ""
+        if [ -n "$PSK_INPUT" ]; then
+            PSK_B64=$(echo -n "$PSK_INPUT" | base64)
+            extra_opts="psk=${PSK_B64}\n"
+        fi
+        read -rp "Rotas adicionais separadas por vírgula (ex: 10.0.0.0/8,172.16.0.0/12) [opcional]: " ROUTES_INPUT
+        if [ -n "$ROUTES_INPUT" ]; then
+            extra_opts="${extra_opts}routes=${ROUTES_INPUT}\n"
+        fi
+        extra_opts="${extra_opts}ipsec-type=ikev2"
+    else
+        extra_opts="ignore-server-cert=true\nlogin-type=vpn"
+        if [[ "$name" == "vpnam" ]]; then
+            extra_opts="${extra_opts}\nike-persist=true"
+        fi
     fi
 
+    mkdir -p "$CONFIG_DIR"
     cat > "$conf_file" <<EOF
+protocol=$PROTO
 server-name=$server
 user-name=${USER_INPUT}
 password=${PASS_B64}
-ignore-server-cert=true
-login-type=vpn
-${extra_opts}
+$(echo -e "$extra_opts")
 EOF
     chmod 600 "$conf_file"
-    info "$label configurada."
+    info "$label [$PROTO] configurada com sucesso."
 }
 
 EXISTING_VPNS=$(ls "$CONFIG_DIR"/vpn*.conf 2>/dev/null | wc -l)

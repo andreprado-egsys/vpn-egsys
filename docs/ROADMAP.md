@@ -29,6 +29,12 @@ Prover aos times de engenharia, DevOps e suporte N1/N2/N3 uma plataforma corpora
 - [x] Bateria de testes unitários automatizados com runner de Quality Gate (`run_tests.sh`).
 - [x] Formalização das diretrizes operacionais de governança com [`AGENTS.md`](../AGENTS.md) e tríade de skills (`vpn-commit`, `vpn-docs-sync`, `vpn-jira-sync`).
 
+### Fase 2.1: Pentest Black Box, Presets Estaduais & Hardening Multi-Usuário (Concluída - v2.1.1)
+- [x] Bateria de Pentest Defensivo Black Box (ACH-VPN-001 a ACH-VPN-010) com 18/18 testes verdes no Quality Gate.
+- [x] Diálogo gráfico com Presets Rápidos de Estados (SC, TO, RO, PR, AM) e alternância reativa de campos IPsec no `vpn-tray`.
+- [x] Hardening Multi-Usuário com resolução de `$SUDO_USER`, permissão `0600`, e autostart sem root.
+- [x] Documento de governança de segurança [`docs/SECURITY.md`](SECURITY.md).
+
 ### Fase 3: Segurança Avançada & Integração com Keyring (Planejada - Q4 2026)
 - [ ] **Integração com Keyring do Sistema**:
   - Linux: Armazenamento de senhas no `SecretService` / `gnome-keyring` / `KWallet` via biblioteca `keyring` de Python, eliminando armazenamento em texto base64.
