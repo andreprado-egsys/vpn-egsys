@@ -24,6 +24,15 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
   (`conn{n}: INSTALLED` / `local === remote`), não colchetes; a checagem de
   SA estabelecida agora reconhece ambos. Descoberto pela simulação netns.
 
+### Alterado
+- **`update.sh` cobre o lado privilegiado IPsec** — novo bloco 10b sincroniza
+  `core/` + `vpn-ipsec-apply` em `/usr/lib/vpn-egsys`, regrava
+  `/etc/sudoers.d/vpn-egsys` (validado com `visudo -c`), habilita
+  `strongswan-starter` e roda o apply; o wizard agora oferta
+  IKEv1 XAuth+PSK como padrão (IKEv2/swanctl opcional), alinhado ao
+  `install.sh`. Fluxo do analista passa a ser `git clone` + `./update.sh`
+  com cobertura 100% em máquinas já instaladas.
+
 ---
 
 ## [2.2.0] - 2026-10-10
