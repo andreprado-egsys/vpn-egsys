@@ -34,6 +34,7 @@ KNOWN_LABELS: Dict[str, str] = {
     'vpnro': 'VPN RO - Rondônia',
     'vpnpr': 'VPN PR - Paraná',
     'vpnam': 'VPN AM - Amazonas',
+    'vpnamsspsnx': 'VPN AM SSP - Check Point (SNX)',
     'vpnmt': 'VPN MT - Mato Grosso',
     'vpnsc': 'VPN SC - Santa Catarina',
     'vpnto': 'VPN TO - Tocantins',
