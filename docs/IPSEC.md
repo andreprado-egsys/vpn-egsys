@@ -101,3 +101,21 @@ sudo /usr/lib/vpn-egsys/vpn-ipsec-apply --check    # exit 1 se desincronizado
 sudo /usr/lib/vpn-egsys/vpn-ipsec-apply            # aplica blocos + reload
 sudo /usr/lib/vpn-egsys/vpn-ipsec-apply --uninstall # remove só os blocos gerenciados
 ```
+
+## 4. Confirmação de rotas liberadas pelo gateway
+
+SA `INSTALLED` não garante que o gateway liberou as redes pedidas: gateways
+podem **reduzir o traffic selector** do túnel (ex.: liberar só
+`10.200.210.0/24` quando o perfil declara `routes=172.20.100.0/24` — caso
+real relatado por dev em 09/10/2026, com o túnel "conectado" e os hosts
+internos mudos). Após estabelecer a SA, o core compara as TS remotas
+instaladas (`ipsec statusall`, linhas `conn{n}: … === rede` /
+`swanctl --list-sas`) com o campo `routes` do perfil e reporta:
+
+> `Túnel IPsec <label> conectado (… ), mas o gateway NÃO liberou as rotas
+> <redes> — política de túnel do gateway (as redes não são alcançáveis).`
+
+A correção é sempre no gateway (address book / split tunnel do grupo de
+usuários), não no cliente. Diagnóstico manual: `ip route get <IP-interno>`
+(deve apontar para o túnel, não para o default) e
+`ipsec statusall | grep '==='`.

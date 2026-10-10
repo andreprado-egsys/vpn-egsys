@@ -6,6 +6,26 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ---
 
+## [2.2.1] - 2026-10-10
+
+### Adicionado
+- **Verificação de rotas liberadas pelo gateway** — após a SA `INSTALLED`,
+  `connect_ipsec_linux` compara as TS remotas instaladas (`ipsec statusall` /
+  `swanctl --list-sas`) com o campo `routes` do perfil
+  (`VPNBackend.installed_remote_ts`, `VPNBackend.missing_released_routes`) e
+  reporta aviso explícito quando o gateway reduz o traffic selector e não
+  libera a rede interna (cenário do túnel "conectado sem rota" relatado pela
+  dev em 09/10/2026). Validado ao vivo com gateway forteSwan mockado em
+  netns que liberava apenas `10.200.210.0/24` para um perfil que declarava
+  `172.20.100.0/24`.
+
+### Corrigido
+- **Parse de CHILD SA no `ipsec statusall`** — o formato real usa chaves
+  (`conn{n}: INSTALLED` / `local === remote`), não colchetes; a checagem de
+  SA estabelecida agora reconhece ambos. Descoberto pela simulação netns.
+
+---
+
 ## [2.2.0] - 2026-10-10
 
 ### Alterado

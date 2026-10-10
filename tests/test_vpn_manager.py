@@ -279,19 +279,45 @@ class TestIpsecBackendLinux(unittest.TestCase):
     @patch("core.vpn_manager.os.path.exists")
     def test_connect_v1_uses_stroke_after_apply(self, mock_exists, mock_run):
         mock_exists.return_value = True
-        ok_out = subprocess.CompletedProcess([], 0, "  vpnamssp[6]: INSTALLED\n", "")
+        ok_out = subprocess.CompletedProcess(
+            [], 0,
+            "  vpnamssp{2}:  INSTALLED, TUNNEL, reqid 1\n"
+            "  vpnamssp{2}:   192.0.2.1/32 === 172.20.100.0/24\n", "")
         mock_run.side_effect = [
             subprocess.CompletedProcess([], 0, "", ""),        # vpn-ipsec-apply
             subprocess.CompletedProcess([], 0, "", ""),        # ipsec up
             ok_out,                                            # statusall (poll 1)
+            ok_out,                                            # statusall (rotas)
         ]
         with patch("core.vpn_manager.shutil.which", return_value='/usr/bin/ipsec'):
             ok, msg = VPNBackend.connect_ipsec_linux(self._conf())
         self.assertTrue(ok)
         self.assertIn("IKEv1 XAuth/stroke", msg)
+        self.assertNotIn("NÃO liberou", msg)
         cmds = [c.args[0] for c in mock_run.call_args_list]
         self.assertIn(['/usr/lib/vpn-egsys/vpn-ipsec-apply'], cmds)
         self.assertIn(['ipsec', 'up', 'vpnamssp'], cmds)
+
+    @patch("core.vpn_manager.run_sudo")
+    @patch("core.vpn_manager.os.path.exists")
+    def test_connect_v1_warns_when_gateway_withholds_route(self, mock_exists, mock_run):
+        """Caso do relato da dev: SA INSTALLED mas o gateway só liberou outra rede."""
+        mock_exists.return_value = True
+        narrow_out = subprocess.CompletedProcess(
+            [], 0,
+            "  vpnamssp{2}:  INSTALLED, TUNNEL, reqid 1\n"
+            "  vpnamssp{2}:   192.0.2.1/32 === 10.200.210.0/24\n", "")
+        mock_run.side_effect = [
+            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 0, "", ""),
+            narrow_out,
+            narrow_out,
+        ]
+        with patch("core.vpn_manager.shutil.which", return_value='/usr/bin/ipsec'):
+            ok, msg = VPNBackend.connect_ipsec_linux(self._conf())
+        self.assertTrue(ok)
+        self.assertIn("NÃO liberou", msg)
+        self.assertIn("172.20.100.0/24", msg)
 
     @patch("core.vpn_manager.run_sudo")
     @patch("core.vpn_manager.os.path.exists")
@@ -316,6 +342,7 @@ class TestIpsecBackendLinux(unittest.TestCase):
             subprocess.CompletedProcess([], 0, "", ""),                        # apply
             subprocess.CompletedProcess([], 0, "", ""),                        # swanctl initiate
             subprocess.CompletedProcess([], 0, "  vpnsc: ESTABLISHED\n", ""),  # list-sas
+            subprocess.CompletedProcess([], 0, "  vpnsc: ESTABLISHED\n", ""),  # list-sas (rotas)
         ]
         conf = self._conf(**{'ipsec-type': 'ikev2'})
         conf['id'] = 'vpnsc'
@@ -364,6 +391,61 @@ class TestIpsecBackendLinux(unittest.TestCase):
             fail = MagicMock(returncode=1, stdout='', stderr='')
             mock_run.return_value = fail
             self.assertFalse(VPNBackend.is_ipsec_active_linux(conf))
+
+
+class TestRouteCoverage(unittest.TestCase):
+    """Cobertura de rotas do perfil vs TS liberadas pelo gateway (caso SNX-RO relatado)."""
+
+    def _conf(self, routes, ipsec_type='ikev1-xauth', vpn_id='vpnamssp'):
+        data = dict(AM_V1_PROFILE)
+        data['ipsec-type'] = ipsec_type
+        data['routes'] = routes
+        return {'id': vpn_id, 'label': 'VPN', 'data': data}
+
+    @patch("core.vpn_manager.run_sudo")
+    def test_installed_remote_ts_stroke(self, mock_run):
+        stdout = ("      vpnamssp{6}:  INSTALLED, TUNNEL, reqid 1\n"
+                  "      vpnamssp{6}:   192.0.2.1/32 === 10.200.210.0/24\n"
+                  "      vpnamssp{7}:  INSTALLED, TUNNEL, reqid 2\n"
+                  "      vpnamssp{7}:   192.0.2.1/32 === 198.51.100.4\n"
+                  "      vpnamssp{8}:  INSTALL_ACQUIRE\n"
+                  "      vpnamssp{8}:   192.0.2.1/32 === 203.0.113.0/24\n")
+        mock_run.return_value = MagicMock(returncode=0, stdout=stdout, stderr='')
+        with patch("core.vpn_manager.shutil.which", return_value='/usr/bin/ipsec'):
+            ts = VPNBackend.installed_remote_ts(self._conf('10.200.210.0/24'))
+        self.assertEqual(ts, ['10.200.210.0/24', '198.51.100.4'])
+
+    @patch("core.vpn_manager.run_sudo")
+    def test_installed_remote_ts_swanctl(self, mock_run):
+        stdout = ("vpnsc: #1, ESTABLISHED, IKEv2, ...\n"
+                  "  local '192.0.2.1' @ eth0\n"
+                  "  remote '198.51.100.1' @ eth0\n"
+                  "  192.0.2.1/32 === 172.20.100.0/24  INSTALLED, TUNNEL\n"
+                  "vpnotro: #2, ESTABLISHED, IKEv2, ...\n"
+                  "  192.0.2.1/32 === 10.9.9.0/24  INSTALLED, TUNNEL\n")
+        mock_run.return_value = MagicMock(returncode=0, stdout=stdout, stderr='')
+        with patch("core.vpn_manager.shutil.which", return_value='/usr/bin/swanctl'):
+            ts = VPNBackend.installed_remote_ts(self._conf('', ipsec_type='ikev2', vpn_id='vpnsc'))
+        self.assertEqual(ts, ['172.20.100.0/24'])
+
+    def test_missing_released_routes_scenarios(self):
+        cases = [
+            ('172.20.100.0/24', ['172.20.100.0/24'], []),
+            ('172.20.100.0/24', ['172.20.100.0/23'], []),
+            ('172.20.100.0/24', ['10.200.210.0/24'], ['172.20.100.0/24']),
+            ('172.20.100.0/24,10.5.0.0/16', ['10.5.0.0/16'], ['172.20.100.0/24']),
+            ('172.20.100.10', ['172.20.100.0/24'], []),
+            ('172.20.100.10', ['172.20.100.10'], []),
+            ('', ['10.0.0.0/8'], []),
+            ('172.20.100.0/24', ['garbage/999'], []),
+            ('172.20.100.0/24', [], []),
+        ]
+        for routes, ts_list, expected in cases:
+            with self.subTest(routes=routes, ts=ts_list):
+                conf = self._conf(routes)
+                with patch.object(VPNBackend, 'installed_remote_ts', return_value=ts_list), \
+                     patch("core.vpn_manager.shutil.which", return_value='/usr/bin/ipsec'):
+                    self.assertEqual(VPNBackend.missing_released_routes(conf), expected)
 
 
 if __name__ == "__main__":

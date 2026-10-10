@@ -5,11 +5,13 @@ Compatível com Linux e macOS (Darwin).
 """
 
 import os
+import re
 import sys
 import glob
 import time
 import base64
 import shutil
+import ipaddress
 import platform
 import subprocess
 from typing import Dict, Optional, Tuple, Any, List
@@ -468,6 +470,12 @@ class VPNBackend:
             # (verificação ativa — o gateway pode rejeitar o XAuth logo em seguida).
             for _ in range(8):
                 if VPNBackend.is_ipsec_active_linux(conf):
+                    missing = VPNBackend.missing_released_routes(conf)
+                    if missing:
+                        return True, (f"Túnel IPsec {label} conectado ({kind}), "
+                                      f"mas o gateway NÃO liberou as rotas "
+                                      f"{', '.join(missing)} — política de túnel "
+                                      f"do gateway (as redes não são alcançáveis).")
                     return True, f"Túnel IPsec {label} conectado ({kind})."
                 time.sleep(2)
             return False, (f"Negociação {kind} iniciada mas a SA não estabeleceu "
@@ -511,9 +519,86 @@ class VPNBackend:
             return False
         for line in r.stdout.splitlines():
             stripped = line.strip()
-            if stripped.startswith(f"{name}[") and 'INSTALLED' in stripped:
-                return True
+            if stripped.startswith(f"{name}[") or stripped.startswith(f"{name}{{"):
+                if 'INSTALLED' in stripped:
+                    return True
         return False
+
+    @staticmethod
+    def installed_remote_ts(conf: Dict[str, Any]) -> List[str]:
+        """TS remotas das SAs-filhas INSTALLED do túnel (stroke statusall ou swanctl)."""
+        name = conf.get('id', '')
+        data = conf.get('data', {})
+        if not name:
+            return []
+        if is_ipsec_v2_profile(data) and shutil.which('swanctl'):
+            r = run_sudo(['swanctl', '--list-sas'], timeout=10, capture=True)
+            if r.returncode != 0:
+                return []
+            ts: List[str] = []
+            in_conn = False
+            for line in r.stdout.splitlines():
+                stripped = line.strip()
+                if stripped.startswith(f"{name}:"):
+                    in_conn = True
+                elif re.match(r'^\S+: #\d+, ', stripped):
+                    in_conn = False
+                if in_conn and '===' in stripped and 'INSTALLED' in stripped:
+                    m = re.search(r'===\s+(\S+)', stripped)
+                    if m:
+                        ts.append(m.group(1))
+            return ts
+        if not shutil.which('ipsec'):
+            return []
+        r = run_sudo(['ipsec', 'statusall'], timeout=10, capture=True)
+        if r.returncode != 0:
+            return []
+        # statusall real: CHILD SAs usam chaves "name{n}:" — a linha INSTALLED traz o
+        # estado e uma linha "local === remote" subsequente traz as TS da criança.
+        ts = []
+        up_children = set()
+        for line in r.stdout.splitlines():
+            stripped = line.strip()
+            m = re.match(rf'^{re.escape(name)}\{{(\d+)\}}:', stripped)
+            if not m:
+                continue
+            idx = m.group(1)
+            if 'INSTALLED' in stripped:
+                up_children.add(idx)
+            m_ts = re.search(r'===\s+(\S+)', stripped)
+            if m_ts and (idx in up_children or 'INSTALLED' in stripped):
+                ts.append(m_ts.group(1))
+        return ts
+
+    @staticmethod
+    def missing_released_routes(conf: Dict[str, Any]) -> List[str]:
+        """Rotas declaradas no perfil que NÃO estão cobertas por nenhuma SA INSTALLED.
+
+        Reproduz o caso relatado pela dev: túnel estabelecido, mas o gateway
+        libera apenas parte das redes — o cliente não deve reportar sucesso pleno.
+        Retorna [] se não houver rotas declaradas ou se as TS não forem parseáveis
+        (evita alarme falso).
+        """
+        routes = [rt.strip() for rt in conf.get('data', {}).get('routes', '').split(',') if rt.strip()]
+        if not routes:
+            return []
+        nets = []
+        for ts in VPNBackend.installed_remote_ts(conf):
+            try:
+                nets.append(ipaddress.ip_network(ts if '/' in ts else f'{ts}/32', strict=False))
+            except ValueError:
+                continue
+        if not nets:
+            return []
+        missing = []
+        for rt in routes:
+            try:
+                net = ipaddress.ip_network(rt if '/' in rt else f'{rt}/32')
+            except ValueError:
+                continue
+            if not any(net.version == n.version and net.subnet_of(n) for n in nets):
+                missing.append(rt)
+        return missing
 
     # --- IPsec macOS ---
     @staticmethod
