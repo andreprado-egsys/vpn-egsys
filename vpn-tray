@@ -25,6 +25,7 @@ from core.vpn_manager import (
     get_config_dir,
     is_macos,
     is_linux,
+    IPSEC_APPLY_PATH,
 )
 
 IS_MACOS = is_macos()
@@ -120,8 +121,8 @@ def run_linux_tray():
             snx_vpns = {k: v for k, v in self.configs.items() if v.get('protocol', 'snx').lower() == 'snx'}
             ipsec_vpns = {k: v for k, v in self.configs.items() if v.get('protocol', 'snx').lower() == 'ipsec'}
 
-            # --- SEÇÃO IPSEC / IKEv2 ---
-            header_ipsec = Gtk.MenuItem(label='── IPsec / IKEv2 ──')
+            # --- SEÇÃO IPSEC ---
+            header_ipsec = Gtk.MenuItem(label='── IPsec (IKEv1 XAuth / IKEv2) ──')
             header_ipsec.set_sensitive(False)
             menu.append(header_ipsec)
 
@@ -136,7 +137,7 @@ def run_linux_tray():
                 empty_ipsec.set_sensitive(False)
                 menu.append(empty_ipsec)
 
-            add_ipsec_item = Gtk.MenuItem(label='  + Adicionar Conexão IPsec (IKEv2)...')
+            add_ipsec_item = Gtk.MenuItem(label='  + Adicionar Conexão IPsec (IKEv1 XAuth)...')
             add_ipsec_item.connect('activate', lambda w: self.on_add_direct(default_proto='ipsec'))
             menu.append(add_ipsec_item)
 
@@ -302,8 +303,8 @@ def run_linux_tray():
                 grid.attach(Gtk.Label(label="<b>Modelo Rápido:</b>", use_markup=True, xalign=0), 0, row, 1, 1)
                 combo_preset = Gtk.ComboBoxText()
                 combo_preset.append('custom', 'Personalizado')
-                combo_preset.append('sc', 'Santa Catarina (SC) — IPsec / IKEv2')
-                combo_preset.append('to', 'Tocantins (TO) — IPsec / IKEv2')
+                combo_preset.append('sc', 'Santa Catarina (SC) — IPsec / IKEv1 XAuth')
+                combo_preset.append('to', 'Tocantins (TO) — IPsec / IKEv1 XAuth')
                 combo_preset.append('ro', 'Rondônia (RO) — Check Point SNX')
                 combo_preset.append('pr', 'Paraná (PR) — Check Point SNX')
                 combo_preset.append('am', 'Amazonas (AM) — Check Point SNX')
@@ -314,11 +315,22 @@ def run_linux_tray():
             # 2. Protocolo
             grid.attach(Gtk.Label(label="<b>Protocolo:</b>", use_markup=True, xalign=0), 0, row, 1, 1)
             combo_proto = Gtk.ComboBoxText()
-            combo_proto.append('ipsec', 'IPsec / IKEv2 (strongSwan)')
+            combo_proto.append('ipsec', 'IPsec (strongSwan)')
             combo_proto.append('snx', 'Check Point SSL (SNX)')
             init_proto = current_data.get('protocol', default_proto).lower()
             combo_proto.set_active(0 if init_proto == 'ipsec' else 1)
             grid.attach(combo_proto, 1, row, 1, 1)
+            row += 1
+
+            # 2b. Versão IKE (apenas IPsec)
+            lbl_ikev = Gtk.Label(label="Versão IKE:", xalign=0)
+            combo_ikev = Gtk.ComboBoxText()
+            combo_ikev.append('ikev1-xauth', 'IKEv1 XAuth + PSK (padrão, FortiGate)')
+            combo_ikev.append('ikev2', 'IKEv2 (swanctl)')
+            init_type = (current_data.get('ipsec-type') or 'ikev1-xauth').lower()
+            combo_ikev.set_active_id('ikev2' if init_type == 'ikev2' else 'ikev1-xauth')
+            grid.attach(lbl_ikev, 0, row, 1, 1)
+            grid.attach(combo_ikev, 1, row, 1, 1)
             row += 1
 
             # 3. Identificador
@@ -379,6 +391,8 @@ def run_linux_tray():
                 is_ipsec_sel = (proto == 'ipsec')
                 lbl_psk.set_visible(is_ipsec_sel)
                 entry_psk.set_visible(is_ipsec_sel)
+                lbl_ikev.set_visible(is_ipsec_sel)
+                combo_ikev.set_visible(is_ipsec_sel)
 
             combo_proto.connect('changed', lambda w: update_fields_visibility())
             update_fields_visibility()
@@ -422,6 +436,7 @@ def run_linux_tray():
                 user = entry_usr.get_text().strip() or current_data.get('user-name', '')
                 pwd = entry_pwd.get_text().strip()
                 protocol = combo_proto.get_active_id() or 'snx'
+                ipsec_type = combo_ikev.get_active_id() or 'ikev1-xauth'
                 psk = entry_psk.get_text().strip()
                 routes = entry_routes.get_text().strip()
 
@@ -444,6 +459,7 @@ def run_linux_tray():
                         user=user,
                         password_b64=pass_b64,
                         protocol=protocol,
+                        ipsec_type=ipsec_type,
                         psk_b64=psk_b64,
                         routes=routes,
                         extra_options=extra_opts
@@ -460,12 +476,12 @@ def run_linux_tray():
         def on_remove_vpn(self, widget, key, dialog):
             cfg_dir = get_config_dir()
             conf_path = os.path.join(cfg_dir, f'{key}.conf')
+            was_ipsec = self.configs.get(key, {}).get('protocol') == 'ipsec'
             if os.path.exists(conf_path):
                 os.remove(conf_path)
 
-            label = self.configs.get(key, {}).get('label', '')
-            if label:
-                subprocess.run(['nmcli', 'connection', 'delete', label], capture_output=True, timeout=5)
+            if was_ipsec and os.path.exists(IPSEC_APPLY_PATH):
+                subprocess.run(['sudo', '-n', IPSEC_APPLY_PATH], capture_output=True, timeout=30)
 
             self.configs = discover_vpns()
             self.build_menu()

@@ -7,13 +7,26 @@ Compatível com Linux e macOS (Darwin).
 import os
 import sys
 import glob
+import time
 import base64
+import shutil
 import platform
 import subprocess
 from typing import Dict, Optional, Tuple, Any, List
 
 CONFIG_DIR = os.path.expanduser('~/.config/snx-rs')
 VPN_EGSYS_DIR = os.path.expanduser('~/.config/vpn-egsys')
+
+IPSEC_APPLY_PATH = '/usr/lib/vpn-egsys/vpn-ipsec-apply'
+
+
+def run_sudo(args: List[str], timeout: int = 30, capture: bool = True) -> subprocess.CompletedProcess:
+    """Executa via sudo -n (NOPASSWD); se exigir senha, re-tenta interativo no terminal."""
+    cmd = ['sudo', '-n'] + list(args)
+    r = subprocess.run(cmd, capture_output=capture, text=True, timeout=timeout)
+    if r.returncode == 1 and capture and 'password is required' in (r.stderr or ''):
+        r = subprocess.run(['sudo'] + list(args), text=True, timeout=timeout)
+    return r
 
 KNOWN_LABELS: Dict[str, str] = {
     'vpnro': 'VPN RO - Rondônia',
@@ -92,7 +105,7 @@ def write_vpn_config(
     user: str,
     password_b64: str,
     protocol: str = 'snx',
-    ipsec_type: str = 'ikev2',
+    ipsec_type: str = 'ikev1-xauth',
     psk_b64: str = '',
     routes: str = '',
     extra_options: Optional[Dict[str, str]] = None
@@ -113,6 +126,8 @@ def write_vpn_config(
     pass_clean = sanitize_config_value(password_b64)
     proto_clean = sanitize_config_value(protocol).lower()
     ipsec_type_clean = sanitize_config_value(ipsec_type).lower()
+    if ipsec_type_clean in ('xauth', 'ikev1'):
+        ipsec_type_clean = 'ikev1-xauth'
     psk_clean = sanitize_config_value(psk_b64)
     routes_clean = sanitize_config_value(routes)
 
@@ -150,6 +165,187 @@ def write_vpn_config(
     return conf_path
 
 
+# --- Materialização de configuração strongSwan (usada pelo helper vpn-ipsec-apply) ---
+
+MARK_BEGIN = "# BEGIN vpn-egsys (managed)"
+MARK_END = "# END vpn-egsys (managed)"
+
+DEFAULT_IKE_PROPOSALS = "aes256-sha256-modp2048,aes128-sha256-modp1536!"
+DEFAULT_ESP_PROPOSALS = "aes256-sha256-modp1536,aes128-sha256-modp1536!"
+
+
+def decode_secret(value: str) -> str:
+    """Decodifica segredos base64 dos perfis; retorna '' se ausente/inválido."""
+    if not value:
+        return ""
+    try:
+        return base64.b64decode(value, validate=True).decode('utf-8', 'replace')
+    except Exception:
+        return ""
+
+
+def escape_stroke_value(value: Any) -> str:
+    """Escapa valores para aspas de ipsec.conf/ipsec.secrets."""
+    cleaned = sanitize_config_value(value)
+    return cleaned.replace('\\', '\\\\').replace('"', '\\"')
+
+
+def is_ipsec_v1_profile(data: Dict[str, str]) -> bool:
+    return (data.get('protocol', 'snx').lower() == 'ipsec'
+            and data.get('ipsec-type', 'ikev1-xauth').lower() != 'ikev2')
+
+
+def is_ipsec_v2_profile(data: Dict[str, str]) -> bool:
+    return (data.get('protocol', 'snx').lower() == 'ipsec'
+            and data.get('ipsec-type', '').lower() == 'ikev2')
+
+
+def render_stroke_block(profiles: Dict[str, Dict[str, Any]]) -> str:
+    """Bloco gerado para /etc/ipsec.conf (stroke IKEv1 Main Mode + PSK + XAuth)."""
+    lines = [MARK_BEGIN]
+    rendered = 0
+    for vpn_id, data in sorted(profiles.items()):
+        if not is_ipsec_v1_profile(data):
+            continue
+        server = sanitize_config_value(data.get('server-name', ''))
+        user = sanitize_config_value(data.get('user-name', ''))
+        routes = (sanitize_config_value(data.get('routes', '')) or '0.0.0.0/0').replace(' ', '')
+        ike = sanitize_config_value(data.get('ike', '')) or DEFAULT_IKE_PROPOSALS
+        esp = sanitize_config_value(data.get('esp', '')) or DEFAULT_ESP_PROPOSALS
+        if not server:
+            continue
+        rendered += 1
+        lines.extend([
+            f"conn {vpn_id}",
+            "    auto=add",
+            "    keyexchange=ikev1",
+            "    aggressive=no",
+            "    authby=psk",
+            f"    ike={ike}",
+            f"    esp={esp}",
+            "    left=%defaultroute",
+            "    leftauth=psk",
+            "    leftauth2=xauth",
+            "    leftid=%any",
+            f"    xauth_identity={user}",
+            "    leftsourceip=%config",
+            f"    right={server}",
+            "    rightauth=psk",
+            "    rightid=%any",
+            f"    rightsubnet={routes}",
+            "    forceencaps=yes",
+            "",
+        ])
+    if not rendered:
+        return ""
+    lines.append(MARK_END)
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_secrets_block(profiles: Dict[str, Dict[str, Any]]) -> str:
+    """Bloco gerado para /etc/ipsec.secrets (PSK do gateway + XAUTH do usuário)."""
+    lines = [MARK_BEGIN]
+    psks, xauths = set(), []
+    for vpn_id, data in sorted(profiles.items()):
+        if not is_ipsec_v1_profile(data):
+            continue
+        psk = decode_secret(data.get('psk', ''))
+        user = sanitize_config_value(data.get('user-name', ''))
+        pwd = decode_secret(data.get('password', ''))
+        if psk:
+            psks.add(escape_stroke_value(psk))
+        if user and pwd:
+            xauths.append((escape_stroke_value(user), escape_stroke_value(pwd)))
+    for psk in sorted(psks):
+        lines.append(f': PSK "{psk}"')
+    for user, pwd in xauths:
+        lines.append(f'{user} : XAUTH "{pwd}"')
+    if not psks and not xauths:
+        return ""
+    lines.append(MARK_END)
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_swanctl_block(profiles: Dict[str, Dict[str, Any]]) -> str:
+    """Conteúdo gerenciado de /etc/swanctl/conf.d/vpn-egsys.conf (perfis IKEv2)."""
+    conns, secrets = [], []
+    for vpn_id, data in sorted(profiles.items()):
+        if not is_ipsec_v2_profile(data):
+            continue
+        server = sanitize_config_value(data.get('server-name', ''))
+        user = sanitize_config_value(data.get('user-name', ''))
+        routes = (sanitize_config_value(data.get('routes', '')) or '0.0.0.0/0').replace(' ', '')
+        ike = sanitize_config_value(data.get('ike', '')) or 'aes256-sha256-modp2048'
+        esp = sanitize_config_value(data.get('esp', '')) or 'aes256-sha256-modp2048'
+        psk = escape_stroke_value(decode_secret(data.get('psk', '')))
+        pwd = escape_stroke_value(decode_secret(data.get('password', '')))
+        if not server:
+            continue
+        conns.append(
+            f"        {vpn_id} {{\n"
+            f"            version = 2\n"
+            f"            remote_addrs = {server}\n"
+            f"            vips = 0.0.0.0\n"
+            f"            proposals = {ike}\n"
+            f"            local {{\n"
+            f"                auth = eap-mschapv2\n"
+            f"                eap_id = {user}\n"
+            f"            }}\n"
+            f"            remote {{\n"
+            f"                auth = psk\n"
+            f"                id = %any\n"
+            f"            }}\n"
+            f"            children {{\n"
+            f"                {vpn_id} {{\n"
+            f"                    remote_ts = {routes}\n"
+            f"                    esp_proposals = {esp}\n"
+            f"                }}\n"
+            f"            }}\n"
+            f"        }}"
+        )
+        if user and pwd:
+            secrets.append(
+                f"        eap-{vpn_id} {{\n"
+                f"            id-1 = {user}\n"
+                f'            secret = "{pwd}"\n'
+                f"        }}"
+            )
+        if psk:
+            secrets.append(
+                f"        ike-{vpn_id} {{\n"
+                f'            secret = "{psk}"\n'
+                f"        }}"
+            )
+    if not conns:
+        return ""
+    body = (
+        f"{MARK_BEGIN}\n"
+        f"connections {{\n" + "\n".join(conns) + "\n}}\n\n"
+        f"secrets {{\n" + "\n".join(secrets) + "\n}}\n"
+        f"{MARK_END}\n"
+    )
+    return body
+
+
+def apply_markers(content: str, block: str) -> str:
+    """Substitui (ou anexa) o bloco entre marcadores, preservando o resto do arquivo."""
+    if MARK_BEGIN in content and MARK_END in content:
+        pre, rest = content.split(MARK_BEGIN, 1)
+        _old, _, post = rest.partition(MARK_END)
+        return f"{pre}{block}\n{post.lstrip(chr(10))}"
+    sep = "" if content.endswith("\n") or not content else "\n"
+    return f"{content}{sep}\n{block}\n"
+
+
+def strip_markers(content: str) -> str:
+    """Remove o bloco gerenciado de um arquivo."""
+    if MARK_BEGIN not in content:
+        return content
+    pre, rest = content.split(MARK_BEGIN, 1)
+    _old, _, post = rest.partition(MARK_END)
+    return (pre + post).strip("\n") + ("\n" if (pre + post).strip() else "")
+
+
 def discover_vpns() -> Dict[str, Dict[str, Any]]:
     """Descobre todas as VPNs configuradas no diretório do usuário."""
     configs: Dict[str, Dict[str, Any]] = {}
@@ -167,7 +363,11 @@ def discover_vpns() -> Dict[str, Dict[str, Any]]:
             parsed = parse_vpn_config(conf)
             label = KNOWN_LABELS.get(name, f'VPN {name[3:].upper()}')
             protocol = parsed.get('protocol', 'snx').lower()
-            proto_tag = '[IPsec]' if protocol == 'ipsec' else '[SNX]'
+            if protocol == 'ipsec':
+                proto_tag = ('[IPsec/IKEv2]' if is_ipsec_v2_profile(parsed)
+                             else '[IPsec/IKEv1-XAuth]')
+            else:
+                proto_tag = '[SNX]'
 
             configs[name] = {
                 'id': name,
@@ -240,66 +440,79 @@ class VPNBackend:
     # --- IPsec Linux ---
     @staticmethod
     def connect_ipsec_linux(conf: Dict[str, Any]) -> Tuple[bool, str]:
-        """Conecta túnel IPsec no Linux via NetworkManager ou strongSwan."""
-        label = conf['label']
+        """Conecta túnel IPsec no Linux via helper vpn-ipsec-apply + strongSwan nativo.
+
+        IKEv1 XAuth+PSK usa stroke (ipsec up); IKEv2 usa swanctl --initiate.
+        O plugin strongSwan do NetworkManager NÃO cobre esses gateways
+        (IKEv2-only e sem híbrido EAP-usuário + PSK-gateway).
+        """
         name = conf['id']
+        label = conf.get('label', name)
+        data = conf.get('data', {})
+        v2 = is_ipsec_v2_profile(data)
 
-        # 1. Tenta via nmcli se a conexão existir
-        res = subprocess.run(['nmcli', 'connection', 'up', label], capture_output=True, text=True, timeout=15)
+        if os.path.exists(IPSEC_APPLY_PATH):
+            applied = run_sudo([IPSEC_APPLY_PATH], timeout=30)
+            if applied.returncode != 0:
+                detail = (applied.stderr or applied.stdout or "").strip()[-300:]
+                return False, f"vpn-ipsec-apply falhou: {detail}"
+        elif not shutil.which('ipsec') and not shutil.which('swanctl'):
+            return False, ("Nenhum backend IPsec encontrado. Execute 'sudo ./install.sh' "
+                           "para provisionar strongSwan e o helper vpn-ipsec-apply.")
+
+        cmd = ['swanctl', '--initiate', '--ike', name] if v2 else ['ipsec', 'up', name]
+        res = run_sudo(cmd, timeout=40)
+        kind = 'IKEv2/swanctl' if v2 else 'IKEv1 XAuth/stroke'
         if res.returncode == 0:
-            return True, f"Túnel IPsec {label} conectado via NetworkManager."
-
-        # 2. Fallback: tenta swanctl ou ipsec se disponível
-        if subprocess.run(['which', 'swanctl'], capture_output=True).returncode == 0:
-            res_swan = subprocess.run(['swanctl', '--initiate', '--ike', name], capture_output=True, text=True, timeout=15)
-            if res_swan.returncode == 0:
-                return True, f"Túnel IPsec {label} conectado via swanctl."
-
-        if subprocess.run(['which', 'ipsec'], capture_output=True).returncode == 0:
-            res_ipsec = subprocess.run(['sudo', 'ipsec', 'up', name], capture_output=True, text=True, timeout=15)
-            if res_ipsec.returncode == 0:
-                return True, f"Túnel IPsec {label} conectado via strongSwan."
-
-        return False, f"Falha ao conectar IPsec no Linux: {res.stderr.strip() or 'Serviço IPsec não encontrado'}"
+            # rc 0 no stroke apenas aceita a iniciação; a SA precisa ficar INSTALLED
+            # (verificação ativa — o gateway pode rejeitar o XAuth logo em seguida).
+            for _ in range(8):
+                if VPNBackend.is_ipsec_active_linux(conf):
+                    return True, f"Túnel IPsec {label} conectado ({kind})."
+                time.sleep(2)
+            return False, (f"Negociação {kind} iniciada mas a SA não estabeleceu "
+                           f"(verifique credenciais no gateway; 'journalctl -u strongswan-starter').")
+        lines = (res.stdout or res.stderr or "").strip().splitlines()
+        detail = " | ".join(lines[-3:]) if lines else "sem detalhes (ver 'vpn status')"
+        return False, f"Falha ao conectar {label} ({kind}): {detail}"
 
     @staticmethod
     def disconnect_ipsec_linux(conf: Dict[str, Any]) -> Tuple[bool, str]:
-        """Desconecta túnel IPsec no Linux."""
+        """Desconecta túnel IPsec no Linux (stroke e swanctl, best-effort)."""
         label = conf.get('label', '')
         name = conf.get('id', '')
-
-        if label:
-            subprocess.run(['nmcli', 'connection', 'down', label], capture_output=True, timeout=5)
-        if subprocess.run(['which', 'swanctl'], capture_output=True).returncode == 0 and name:
-            subprocess.run(['swanctl', '--terminate', '--ike', name], capture_output=True, timeout=5)
-        if subprocess.run(['which', 'ipsec'], capture_output=True).returncode == 0 and name:
-            subprocess.run(['sudo', 'ipsec', 'down', name], capture_output=True, timeout=5)
-
+        if not name:
+            return True, "Nada a desconectar."
+        data = conf.get('data', {})
+        if is_ipsec_v2_profile(data) and shutil.which('swanctl'):
+            run_sudo(['swanctl', '--terminate', '--ike', name], timeout=15, capture=True)
+        if shutil.which('ipsec'):
+            run_sudo(['ipsec', 'down', name], timeout=15, capture=True)
         return True, f"Túnel IPsec {label or name} desconectado."
 
     @staticmethod
     def is_ipsec_active_linux(conf: Dict[str, Any]) -> bool:
-        """Verifica se o túnel IPsec está ativo no Linux."""
-        label = conf.get('label', '')
+        """Verifica se a SA do túnel está INSTALLED/ESTABLISHED (sem falsos positivos de xfrm)."""
         name = conf.get('id', '')
-
-        # Verifica via nmcli
-        if label:
-            r = subprocess.run(['nmcli', '-t', '-f', 'NAME,TYPE,STATE', 'connection', 'show', '--active'],
-                               capture_output=True, text=True, timeout=5)
-            if r.returncode == 0 and label in r.stdout:
+        if not name:
+            return False
+        data = conf.get('data', {})
+        if is_ipsec_v2_profile(data) and shutil.which('swanctl'):
+            r = run_sudo(['swanctl', '--list-sas'], timeout=10, capture=True)
+            if r.returncode == 0:
+                for line in r.stdout.splitlines():
+                    if line.strip().startswith(f"{name}:") and 'ESTABLISHED' in line:
+                        return True
+            return False
+        if not shutil.which('ipsec'):
+            return False
+        r = run_sudo(['ipsec', 'statusall'], timeout=10, capture=True)
+        if r.returncode != 0:
+            return False
+        for line in r.stdout.splitlines():
+            stripped = line.strip()
+            if stripped.startswith(f"{name}[") and 'INSTALLED' in stripped:
                 return True
-
-        # Verifica via swanctl
-        if subprocess.run(['which', 'swanctl'], capture_output=True).returncode == 0:
-            r = subprocess.run(['swanctl', '--list-sas'], capture_output=True, text=True, timeout=5)
-            if r.returncode == 0 and name in r.stdout:
-                return True
-
-        # Verifica interfaces de túnel ipsec0 / xfrm*
-        if os.path.exists('/sys/class/net/ipsec0') or any('xfrm' in iface for iface in glob.glob('/sys/class/net/*')):
-            return True
-
         return False
 
     # --- IPsec macOS ---

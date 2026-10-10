@@ -37,22 +37,18 @@ for conf in "$CONFIG_DIR"/vpn*.conf; do
     nmcli connection delete "$label" 2>/dev/null || true
 
     if [ "$proto" = "ipsec" ]; then
-        # Tenta criar conexão IPsec via StrongSwan no NM se plugin presente
-        if nmcli connection add type vpn vpn-type strongswan con-name "$label" \
-            vpn.data "address=$server, encap=yes, ipcomp=no, method=key, proposal=no" \
-            autoconnect no 2>/dev/null; then
-            echo "[✓] $label (${server}) [IPsec StrongSwan]"
-        else
-            # Fallback para interface de controle dummy
-            nmcli connection add \
-                type dummy \
-                ifname "ipsec-${name}" \
-                con-name "$label" \
-                autoconnect no \
-                ipv4.method disabled \
-                ipv6.method disabled 2>/dev/null || true
-            echo "[✓] $label (${server}) [IPsec Generic]"
-        fi
+        # NÃO cria conexão strongSwan no NM: o plugin do NetworkManager é IKEv2-only
+        # e não expressa o híbrido IKEv1 XAuth+PSK exigido por gateways FortiGate.
+        # O túnel é gerenciado via helper vpn-ipsec-apply (stroke/swanctl nativo).
+        # A interface dummy existe apenas para exibição/controle no NM.
+        nmcli connection add \
+            type dummy \
+            ifname "ipsec-${name}" \
+            con-name "$label" \
+            autoconnect no \
+            ipv4.method disabled \
+            ipv6.method disabled 2>/dev/null || true
+        echo "[✓] $label (${server}) [IPsec — backend strongSwan nativo]"
     else
         nmcli connection add \
             type dummy \

@@ -180,20 +180,20 @@ if [ "$PKG_MANAGER" == "apt" ]; then
     # webkit2gtk: tenta 4.0 primeiro (Ubuntu 22.04), fallback para 4.1 (Ubuntu 24.04+)
     sudo apt install -y python3-gi python3-requests gir1.2-gtk-3.0 \
         gir1.2-ayatanaappindicator3-0.1 network-manager curl \
-        strongswan network-manager-strongswan libwebkit2gtk-4.0-37 2>/dev/null || \
+        strongswan libwebkit2gtk-4.0-37 2>/dev/null || \
     sudo apt install -y python3-gi python3-requests gir1.2-gtk-3.0 \
         gir1.2-ayatanaappindicator3-0.1 network-manager curl \
-        strongswan network-manager-strongswan libwebkit2gtk-4.1-0 2>/dev/null || \
+        strongswan libwebkit2gtk-4.1-0 2>/dev/null || \
     sudo apt install -y python3-gi python3-requests gir1.2-gtk-3.0 \
         gir1.2-ayatanaappindicator3-0.1 network-manager curl \
-        strongswan network-manager-strongswan 2>/dev/null || \
+        strongswan 2>/dev/null || \
     sudo apt install -y python3-gi python3-requests gir1.2-gtk-3.0 \
         gir1.2-ayatanaappindicator3-0.1 network-manager curl
 elif [ "$PKG_MANAGER" == "pacman" ]; then
     sudo pacman -Sy --noconfirm --needed python-gobject python-requests gtk3 \
-        libayatana-appindicator networkmanager curl strongswan networkmanager-strongswan webkit2gtk 2>/dev/null || \
+        libayatana-appindicator networkmanager curl strongswan webkit2gtk 2>/dev/null || \
     sudo pacman -Sy --noconfirm --needed python-gobject python-requests gtk3 \
-        libayatana-appindicator networkmanager curl strongswan networkmanager-strongswan 2>/dev/null || \
+        libayatana-appindicator networkmanager curl strongswan 2>/dev/null || \
     sudo pacman -Sy --noconfirm --needed python-gobject python-requests gtk3 \
         libayatana-appindicator networkmanager curl
 fi
@@ -255,7 +255,7 @@ setup_vpn_config() {
 
     echo "Selecione o protocolo da VPN:"
     echo "  1) Check Point SSL (SNX) [padrão]"
-    echo "  2) IPsec / IKEv2 (strongSwan)"
+    echo "  2) IPsec (IKEv1 XAuth+PSK — padrão; IKEv2/swanctl opcional)"
     read -rp "Opção [1/2] (padrão: 1): " PROTO_OPT
     local PROTO="snx"
     if [[ "$PROTO_OPT" == "2" || "$PROTO_OPT" == "ipsec" ]]; then
@@ -270,6 +270,9 @@ setup_vpn_config() {
 
     local extra_opts=""
     if [ "$PROTO" = "ipsec" ]; then
+        local IPSEC_TYPE="ikev1-xauth"
+        read -rp "Tipo de IKEv [1=IKEv1 XAuth+PSK (padrão) / 2=IKEv2 swanctl]: " IKEV_OPT
+        [ "$IKEV_OPT" = "2" ] && IPSEC_TYPE="ikev2"
         read -rsp "Chave Pré-Compartilhada (PSK) [opcional, Enter para pular]: " PSK_INPUT; echo ""
         if [ -n "$PSK_INPUT" ]; then
             PSK_B64=$(echo -n "$PSK_INPUT" | base64)
@@ -279,7 +282,7 @@ setup_vpn_config() {
         if [ -n "$ROUTES_INPUT" ]; then
             extra_opts="${extra_opts}routes=${ROUTES_INPUT}\n"
         fi
-        extra_opts="${extra_opts}ipsec-type=ikev2"
+        extra_opts="${extra_opts}ipsec-type=${IPSEC_TYPE}"
     else
         extra_opts="ignore-server-cert=true\nlogin-type=vpn"
         if [[ "$name" == "vpnam" ]]; then
@@ -384,6 +387,34 @@ chmod +x "$LOCAL_BIN/vpn"
 cp -r "$SCRIPT_DIR/core" "$LOCAL_BIN/"
 cp "$SCRIPT_DIR/icons/"*.svg "$ICON_DIR/"
 info "vpn-tray, CLI universal 'vpn' e ícones instalados."
+
+# --- 11b. Backend IPsec: helper root, sudoers e strongswan-starter ---
+warn "Provisionando backend IPsec (strongSwan stroke + helper vpn-ipsec-apply)..."
+sudo mkdir -p /usr/lib/vpn-egsys
+sudo cp -r "$SCRIPT_DIR/core" /usr/lib/vpn-egsys/
+sudo install -m 0755 "$SCRIPT_DIR/vpn-ipsec-apply" /usr/lib/vpn-egsys/vpn-ipsec-apply
+
+IPSEC_BIN="$(command -v ipsec || echo /usr/sbin/ipsec)"
+SWANCTL_BIN="$(command -v swanctl || echo /usr/sbin/swanctl)"
+SUDOERS_TMP="$(mktemp)"
+cat > "$SUDOERS_TMP" <<EOF
+$TARGET_USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply, $IPSEC_BIN up vpn*, $IPSEC_BIN down vpn*, $IPSEC_BIN statusall, $IPSEC_BIN reload, $SWANCTL_BIN --initiate *, $SWANCTL_BIN --terminate *, $SWANCTL_BIN --list-sas
+EOF
+if sudo visudo -c -q -f "$SUDOERS_TMP" >/dev/null 2>&1; then
+    sudo install -m 0440 "$SUDOERS_TMP" /etc/sudoers.d/vpn-egsys
+    info "sudoers /etc/sudoers.d/vpn-egsys instalado (NOPASSWD restrito a vpn*)."
+else
+    warn "sudoers gerado é inválido — NÃO instalado; conexões IPsec pedirão senha sudo."
+fi
+rm -f "$SUDOERS_TMP"
+
+if systemctl list-unit-files 2>/dev/null | grep -q '^strongswan-starter'; then
+    sudo systemctl disable --now strongswan >/dev/null 2>&1 || true
+    sudo systemctl enable --now strongswan-starter >/dev/null 2>&1 || \
+        sudo systemctl restart strongswan-starter
+    info "Daemon strongswan-starter habilitado (charon-systemd não carrega conns stroke)."
+fi
+sudo /usr/lib/vpn-egsys/vpn-ipsec-apply --user "$TARGET_USER" || true
 
 # --- 12. Desktop entry e autostart ---
 mkdir -p "$APPS_DIR" "$AUTOSTART_DIR"

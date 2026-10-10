@@ -75,7 +75,7 @@ setup_vpn_config() {
 
     echo "Selecione o protocolo da VPN:"
     echo "  1) Check Point SSL (SNX) [padrão]"
-    echo "  2) IPsec / IKEv2 (strongSwan)"
+    echo "  2) IPsec (IKEv1 XAuth+PSK — padrão; IKEv2/swanctl opcional)"
     read -rp "Opção [1/2] (padrão: 1): " PROTO_OPT
     local PROTO="snx"
     if [[ "$PROTO_OPT" == "2" || "$PROTO_OPT" == "ipsec" ]]; then
@@ -90,6 +90,9 @@ setup_vpn_config() {
 
     local extra_opts=""
     if [ "$PROTO" = "ipsec" ]; then
+        local IPSEC_TYPE="ikev1-xauth"
+        read -rp "Tipo de IKEv [1=IKEv1 XAuth+PSK (padrão) / 2=IKEv2 swanctl]: " IKEV_OPT
+        [ "$IKEV_OPT" = "2" ] && IPSEC_TYPE="ikev2"
         read -rsp "Chave Pré-Compartilhada (PSK) [opcional, Enter para pular]: " PSK_INPUT; echo ""
         if [ -n "$PSK_INPUT" ]; then
             PSK_B64=$(echo -n "$PSK_INPUT" | base64)
@@ -99,7 +102,7 @@ setup_vpn_config() {
         if [ -n "$ROUTES_INPUT" ]; then
             extra_opts="${extra_opts}routes=${ROUTES_INPUT}\n"
         fi
-        extra_opts="${extra_opts}ipsec-type=ikev2"
+        extra_opts="${extra_opts}ipsec-type=${IPSEC_TYPE}"
     else
         extra_opts="ignore-server-cert=true\nlogin-type=vpn"
         if [[ "$name" == "vpnam" ]]; then

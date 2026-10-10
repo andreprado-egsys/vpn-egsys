@@ -6,6 +6,41 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ---
 
+## [2.2.0] - 2026-10-10
+
+### Alterado
+- **IPsec: backend stroke IKEv1 XAuth+PSK (padrão)** — gateways FortiGate
+  (ex: VPN AM SSP) só negociam IKEv1 Main Mode + PSK + XAuth SHA-256; o plugin
+  strongSwan do NetworkManager (IKEv2-only) foi removido do caminho de conexão.
+  - `core/vpn_manager.py`: novos renderizadores puros (`render_stroke_block`,
+    `render_secrets_block`, `render_swanctl_block`, `apply_markers`,
+    `strip_markers`); `connect/disconnect/status` IPsec Linux usam
+    `sudo ipsec up|down|statusall` (IKEv1) e `swanctl` (IKEv2) via
+    `run_sudo` NOPASSWD, com confirmação de SA `INSTALLED` antes de reportar
+    conexão; perfis normativizam `ikev1`/`xauth` → `ikev1-xauth` (padrão).
+  - Novo helper privilegiado `vpn-ipsec-apply` (`/usr/lib/vpn-egsys/`):
+    materializa os perfis `vpn*.conf` do usuário nos blocos gerenciados
+    `# BEGIN/END vpn-egsys` de `/etc/ipsec.conf`/`ipsec.secrets` e em
+    `/etc/swanctl/conf.d/vpn-egsys.conf`; garante `stroke.load=yes` e a unit
+    `strongswan-starter`; suporta `--check` e `--uninstall`.
+  - `install.sh`: sudoers restrito validado com `visudo -c -f`
+    (`/etc/sudoers.d/vpn-egsys`), remoção de `network-manager-strongswan`
+    das dependências, habilitação de `strongswan-starter`.
+  - `vpn`, `vpn-tray`, `user-setup.sh`: seleção/wizard com `ikev1-xauth` como
+    padrão; bandeja agora grava `ipsec-type` e remove apenas o perfil
+    (regenerando os blocos via helper, sem `nmcli connection delete`).
+  - `nm-snx-setup.sh`: não cria mais conexões `vpn-type strongswan` no NM.
+
+### Adicionado
+- Testes unitários dos renderizadores (golden do modelo validado em produção),
+  escape/injeção em `ipsec.secrets`, idempotência de marcadores, backends
+  Linux com `subprocess` mockado e varredura de segurança do
+  `vpn-ipsec-apply` (ACH-VPN-006/007).
+- `docs/IPSEC.md` reescrito: fluxo perfis → helper → stroke/swanctl e a
+  tabela de incompatibilidades NM/vpnc/L2tp medidas contra o FortiGate AM SSP.
+
+---
+
 ## [2.1.1] - 2026-09-30
 
 ### Adicionado

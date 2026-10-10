@@ -2,7 +2,7 @@
 
 ## Visão Geral da Arquitetura
 
-O **vpn-egsys** é um sistema modular multi-protocolo (**Check Point SNX** e **IPsec IKEv2**) e cross-platform (**Linux** e **macOS**), composto pelas seguintes camadas:
+O **vpn-egsys** é um sistema modular multi-protocolo (**Check Point SNX** e **IPsec — IKEv1 XAuth+PSK (padrão) / IKEv2 swanctl**) e cross-platform (**Linux** e **macOS**), composto pelas seguintes camadas:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -269,6 +269,22 @@ User → vpn-tray (Menu) → on_connect()
                                       └── -l info: Nível de log
 ```
 
+Fluxo IPsec (Linux):
+
+```
+User → vpn/vpn-tray → connect_vpn() → VPNBackend.connect_ipsec_linux()
+  │
+  ├── sudo /usr/lib/vpn-egsys/vpn-ipsec-apply   (materializa perfis vpn*.conf nos
+  │        │                                     blocos gerenciados de /etc)
+  │        ├── /etc/ipsec.conf        (conn stroke IKEv1, BEGIN/END vpn-egsys)
+  │        ├── /etc/ipsec.secrets     (PSK + XAUTH, 0600, bloco gerenciado)
+  │        └── /etc/swanctl/conf.d/vpn-egsys.conf (perfis ikev2)
+  │
+  ├── ikev1-xauth → sudo ipsec up vpnXX    (stroke / strongswan-starter)
+  ├── ikev2       → sudo swanctl --initiate --ike vpnXX
+  └── verificação: SA INSTALLED em ipsec statusall (rc 0 sozinho NÃO conecta)
+```
+
 ### 3. Fluxo de Monitoramento
 
 ```
@@ -324,6 +340,18 @@ O arquivo `/etc/sudoers.d/vpn-egsys` contém:
 
 ```
 USER ALL=(ALL) NOPASSWD: /usr/bin/snx-rs, /usr/bin/killall snx-rs, /usr/bin/rm -f /run/snx-rs.lock
+```
+
+Para o backend IPsec, o `install.sh` escreve (após validação `visudo -c`) um
+segundo conjunto restrito — nomes de conexão são sempre sanitizados para
+começarem com `vpn`, então o glob `vpn*` não abre margem de injeção:
+
+```
+USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply,
+    /usr/bin/ipsec up vpn*, /usr/bin/ipsec down vpn*,
+    /usr/bin/ipsec statusall, /usr/bin/ipsec reload,
+    /usr/bin/swanctl --initiate *, /usr/bin/swanctl --terminate *,
+    /usr/bin/swanctl --list-sas
 ```
 
 **Riscos:**

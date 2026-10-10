@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""
+vpn-ipsec-apply - helper privilegiado do vpn-egsys.
+
+Materializa os perfis de vpn*.conf do usuário em:
+  - /etc/ipsec.conf e /etc/ipsec.secrets (apenas o bloco entre marcadores
+    "BEGIN/END vpn-egsys"; conns de terceiros nunca são tocadas)
+  - /etc/swanctl/conf.d/vpn-egsys.conf (perfis IKEv2; arquivo gerenciado inteiro)
+e garante o daemon correto (strongswan-starter + stroke.load=yes).
+
+Uso: sudo vpn-ipsec-apply [--check] [--uninstall] [--user USUARIO]
+  --check     : não escreve; exit 1 se houver diff, 0 se em dia
+  --uninstall : remove apenas os blocos/marcadores gerenciados
+Execução de comandos sempre via argv list (política de pentest do projeto).
+"""
+
+import os
+import pwd
+import subprocess
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+for candidate in ('/usr/lib/vpn-egsys', HERE):
+    if os.path.isdir(os.path.join(candidate, 'core')):
+        sys.path.insert(0, candidate)
+        break
+
+from core.vpn_manager import (  # noqa: E402
+    apply_markers,
+    parse_vpn_config,
+    render_secrets_block,
+    render_stroke_block,
+    render_swanctl_block,
+    strip_markers,
+)
+
+IPSEC_CONF = '/etc/ipsec.conf'
+IPSEC_SECRETS = '/etc/ipsec.secrets'
+SWANCTL_CONFD = '/etc/swanctl/conf.d'
+SWANCTL_MANAGED = os.path.join(SWANCTL_CONFD, 'vpn-egsys.conf')
+STROKE_CONF = '/etc/strongswan.d/charon/stroke.conf'
+
+
+def user_config_dirs(username: str):
+    home = pwd.getpwnam(username).pw_dir
+    return [
+        os.path.join(home, '.config', 'vpn-egsys'),
+        os.path.join(home, '.config', 'snx-rs'),
+    ]
+
+
+def load_profiles(username: str) -> dict:
+    """Lê perfis vpn*.conf (protocol=ipsec) do usuário-alvo, com precedência vpn-egsys/."""
+    profiles: dict = {}
+    for cfg_dir in reversed(user_config_dirs(username)):
+        if not os.path.isdir(cfg_dir):
+            continue
+        for fname in sorted(os.listdir(cfg_dir)):
+            if fname.startswith('vpn') and fname.endswith('.conf'):
+                vpn_id = fname[:-len('.conf')]
+                profiles[vpn_id] = parse_vpn_config(os.path.join(cfg_dir, fname))
+    return profiles
+
+
+def desired_state(profiles: dict, uninstall: bool):
+    if uninstall or not profiles:
+        return '', '', ''
+    stroke_block = render_stroke_block(profiles)
+    secrets_block = render_secrets_block(profiles)
+    swanctl_body = render_swanctl_block(profiles)
+    return stroke_block, secrets_block, swanctl_body
+
+
+def read_file(path: str) -> str:
+    try:
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            return f.read()
+    except FileNotFoundError:
+        return ''
+
+
+def atomic_write(path: str, content: str, mode: int):
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix='.vpn-egsys-')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(content)
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        finally:
+            raise
+
+
+def plan(path: str, block: str, managed_file: bool = False, mode: int = 0o644):
+    """Retorna (muda, novo_conteudo) para um arquivo com bloco marcado."""
+    if managed_file:
+        current = read_file(path)
+        if not block:
+            return (True, None) if os.path.exists(path) else (False, None)
+        return (current != block, block) if current != block else (False, block)
+    if not os.path.exists(path) and not block:
+        return False, None
+    current = read_file(path)
+    if block:
+        new = apply_markers(current, block)
+    else:
+        new = strip_markers(current)
+    return (new != current, new)
+
+
+def compute_diff(profiles: dict, uninstall: bool):
+    stroke_block, secrets_block, swanctl_body = desired_state(profiles, uninstall)
+    plans = [
+        (IPSEC_CONF, stroke_block, False, 0o644),
+        (IPSEC_SECRETS, secrets_block, False, 0o600),
+        (SWANCTL_MANAGED, swanctl_body, True, 0o644),
+    ]
+    out = []
+    for path, block, managed, mode in plans:
+        changed, content = plan(path, block, managed, mode)
+        if changed:
+            out.append((path, content, mode))
+    return out
+
+
+def apply_changes(diff):
+    for path, content, mode in diff:
+        if content is None:
+            if os.path.exists(path):
+                os.unlink(path)
+            continue
+        atomic_write(path, content, mode)
+
+
+def ensure_stroke_conf():
+    """charon precisa de stroke.load=yes apontando para /etc/ipsec.conf."""
+    current = read_file(STROKE_CONF)
+    if not current:
+        return
+    needed = 'load = no' in current and 'load = yes' not in current
+    fixed = current
+    if needed:
+        fixed = fixed.replace('load = no', 'load = yes', 1)
+    if 'config = ' not in fixed:
+        fixed = fixed.rstrip('\n') + '\n    config = /etc/ipsec.conf\n'
+    if fixed != current:
+        atomic_write(STROKE_CONF, fixed, 0o644)
+
+
+def systemctl(*args):
+    return subprocess.run(['systemctl', *args], capture_output=True, text=True)
+
+
+def ensure_daemon():
+    enabled = systemctl('is-enabled', 'strongswan-starter')
+    if enabled.returncode != 0:
+        systemctl('disable', 'strongswan')
+        systemctl('enable', '--now', 'strongswan-starter')
+    active = systemctl('is-active', 'strongswan-starter')
+    if active.returncode != 0:
+        systemctl('restart', 'strongswan-starter')
+
+
+def main(argv) -> int:
+    if os.geteuid() != 0:
+        print("erro: execute via sudo (o helper escreve em /etc)", file=sys.stderr)
+        return 2
+
+    username = os.environ.get('SUDO_USER', '')
+    if '--user' in argv:
+        i = argv.index('--user')
+        if i + 1 < len(argv):
+            username = argv[i + 1]
+    if not username:
+        print("erro: informe --user USUARIO (ou rode via sudo para usar SUDO_USER)",
+              file=sys.stderr)
+        return 2
+
+    check = '--check' in argv
+    uninstall = '--uninstall' in argv
+
+    try:
+        pwd.getpwnam(username)
+    except KeyError:
+        print(f"erro: usuário inexistente '{username}'", file=sys.stderr)
+        return 2
+
+    profiles = load_profiles(username)
+    diff = compute_diff(profiles, uninstall)
+
+    if check:
+        if diff:
+            print("configuração IPsec desincronizada (rode: sudo vpn-ipsec-apply)")
+            return 1
+        print("configuração IPsec em dia")
+        return 0
+
+    if diff:
+        apply_changes(diff)
+    ensure_stroke_conf()
+    if not uninstall and profiles:
+        ensure_daemon()
+        subprocess.run(['ipsec', 'reload'], check=False)
+    if diff:
+        print("aplicado" if not uninstall else "blocos gerenciados removidos")
+    else:
+        print("nada a aplicar (blocos já sincronizados)")
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

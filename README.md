@@ -1,13 +1,16 @@
-# vpn-egsys v2.1 (Multi-Protocolo, Presets Estaduais & Cross-Platform)
+# vpn-egsys v2.2 (Multi-Protocolo, IPsec IKEv1 XAuth & Cross-Platform)
 
-Gerenciador universal de VPNs, monitor de bandeja (`vpn-tray`), utilitário de terminal (`vpn`) e integração com **Check Point (SNX via `snx-rs`)** e **IPsec (IKEv2)** para estações **Linux** e **macOS**.
+Gerenciador universal de VPNs, monitor de bandeja (`vpn-tray`), utilitário de terminal (`vpn`) e integração com **Check Point (SNX via `snx-rs`)** e **IPsec (IKEv1 XAuth+PSK — padrão — / IKEv2 swanctl)** para estações **Linux** e **macOS**.
 
-## Novidades v2.1.1
+## Novidades v2.2.0
+- **Backend IPsec stroke IKEv1 XAuth+PSK (padrão)**: suporte real a gateways FortiGate (AM SSP); conexão sem depender do plugin strongSwan do NetworkManager (IKEv2-only), com materialização automática dos perfis em `/etc/ipsec.conf`/`ipsec.secrets` via helper `vpn-ipsec-apply` + sudoers NOPASSWD restrito.
+- **IKEv2 mantido via swanctl** (`ipsec-type=ikev2` gera `/etc/swanctl/conf.d/vpn-egsys.conf`).
+- **Confirmação de SA `INSTALLED`** antes de reportar túnel conectado.
 - **Presets Estaduais Rápidos na Bandeja (`vpn-tray`)**: Configuração em um clique para Santa Catarina (SC), Tocantins (TO), Rondônia (RO), Paraná (PR) e Amazonas (AM).
 - **Interface Reativa Multi-Protocolo**: Alternância automática de visibilidade para campos de IPsec (Chave PSK e Rotas customizadas).
 - **Hardening Multi-Usuário (`SUDO_USER`)**: Execuções com `sudo` isolam o home do usuário real e inicializam a bandeja na sessão gráfica correta (sem rodar como root).
 - **Bateria de Pentest Black Box (ACH-VPN-001..010)**: 100% de conformidade com testes de injeção, caminhos e sanitização estrita.
-- **Suporte Multi-Protocolo**: Check Point SSL Network Extender (SNX) e IPsec (IKEv2).
+- **Suporte Multi-Protocolo**: Check Point SSL Network Extender (SNX) e IPsec (IKEv1 XAuth+PSK / IKEv2).
 - **Suporte Cross-Platform**: Linux (Ubuntu, Debian, Arch, CachyOS) e macOS (Monterey, Ventura, Sonoma, Sequoia - Intel & Apple Silicon).
 - **CLI Universal `vpn`**: comandos rápidos no terminal (`vpn list`, `vpn ro`, `vpn off`, `vpn status`, `vpn add`).
 - **Tray Nativo macOS**: compatibilidade com a barra de menus do macOS via `pystray` / AppKit nativo e LaunchAgent `launchd`.
@@ -100,8 +103,9 @@ A SAPA verifica automaticamente se a VPN necessária está conectada:
          ┌───────────────┴────────┐      ┌────────┴──────────────┐
          ▼                        ▼      ▼                       ▼
     [Check Point SNX]     [IPsec Linux] [Check Point macOS]  [IPsec macOS]
-      snxctl daemon        NetworkManager /   snx-rs /         scutil --nc /
-      systemd service       strongSwan      command mode       networksetup
+      snxctl daemon      strongSwan stroke/   snx-rs /         scutil --nc /
+      systemd service     swanctl (helper   command mode       networksetup
+                           vpn-ipsec-apply)
 ```
 
 ## Adicionar nova VPN
@@ -127,15 +131,17 @@ ignore-server-cert=true
 login-type=vpn
 ```
 
-**Formato IPsec (IKEv2):**
+**Formato IPsec (IKEv1 XAuth+PSK — padrão):**
 ```ini
 protocol=ipsec
 server-name=SERVIDOR_IP_OU_HOST
 user-name=USUARIO
 password=SENHA_EM_BASE64
-ipsec-type=ikev2
+ipsec-type=ikev1-xauth
+psk=PSK_EM_BASE64
 routes=10.0.0.0/8,172.20.0.0/16
 ```
+Use `ipsec-type=ikev2` para gateways IKEv2 (gerenciado via `swanctl conf.d`).
 ## Dependências
 
 Instaladas automaticamente:
