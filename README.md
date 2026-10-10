@@ -53,7 +53,10 @@ git pull
 ./update.sh
 ```
 
-O `update.sh` migra automaticamente da arquitetura antiga (standalone) para a nova (command mode).
+O `update.sh` migra automaticamente da arquitetura antiga (standalone) para a nova (command mode)
+e também provisiona o backend IPsec privilegiado (helper `/usr/lib/vpn-egsys/vpn-ipsec-apply`,
+sudoers NOPASSWD restrito a `vpn*` e `strongswan-starter`) — em máquinas já instaladas,
+`git pull && ./update.sh` cobre 100% do cliente.
 
 ## Uso
 
