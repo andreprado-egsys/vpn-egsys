@@ -1,11 +1,13 @@
 # AGENTS.md — vpn-egsys
 
 `egSYS VPN Manager` — Suíte corporativa de automação, configuração, monitor de bandeja (`vpn-tray`),
-CLI universal (`vpn`), suporte multi-protocolo (Check Point SNX e IPsec/IKEv2) e compatibilidade
-cross-platform (**Linux** e **macOS**).
+CLI universal (`vpn`), suporte multi-protocolo (Check Point SNX e IPsec — IKEv1 XAuth+PSK padrão /
+IKEv2 swanctl) e compatibilidade cross-platform (**Linux** e **macOS**).
 
 ## Regra de produto (anti-desvio — INEGOCIÁVEL)
-- **Multi-Protocolo**: Suporte transparente a Check Point (`snx-rs` / `snxctl`) e IPsec (`strongSwan` / `NetworkManager` no Linux; `scutil --nc` / `networksetup` nativo no macOS).
+- **Multi-Protocolo**: Suporte transparente a Check Point (`snx-rs` / `snxctl`) e IPsec (no Linux,
+  strongSwan nativo stroke/swanctl materializado pelo helper privilegiado `vpn-ipsec-apply` —
+  o NetworkManager **não** é usado para IPsec; no macOS, `scutil --nc` / `networksetup` nativo).
 - **Cross-Platform**: Instalação e execução com 0 atrito em Linux (Debian, Ubuntu, Arch, CachyOS) e macOS (Intel e Apple Silicon M1/M2/M3/M4).
 - **Zero credenciais em claro no repositório**: Arquivos de configuração `.conf` locais são gerados
   exclusivamente em runtime sob `~/.config/snx-rs/` com permissão estrita `0600` e gitignored.

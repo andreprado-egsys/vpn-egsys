@@ -59,25 +59,25 @@ Cada arquivo `vpn*.conf` gera um alias com o mesmo nome:
 | `vpnsp` | VPN São Paulo | Conecta à VPN de São Paulo |
 | `...` | ... | ... |
 
-**Formato do alias:**
+**Formato do alias (função, command mode vigente):**
 ```bash
-alias vpnro="sudo killall snx-rs 2>/dev/null; sleep 0.5; sudo rm -f /run/snx-rs.lock 2>/dev/null; nohup sudo snx-rs -m standalone -c ~/.config/snx-rs/vpnro.conf -l info > /tmp/snx-rs.log 2>&1 & sleep 3 && tail -n 5 /tmp/snx-rs.log"
+vpnro() { snxctl disconnect 2>/dev/null; sleep 1; cp ~/.config/snx-rs/vpnro.conf ~/.config/snx-rs/snx-rs.conf; snxctl connect 2>&1; for i in $(seq 1 20); do snxctl status 2>/dev/null | grep -qiE 'conectado desde|connected since' && echo "✓ vpnro conectada" && return 0; sleep 1; done; echo "✗ Timeout"; }
 ```
 
-**O que o alias faz:**
-1. `sudo killall snx-rs` - Finaliza qualquer conexão VPN ativa
-2. `sleep 0.5` - Aguarda meio segundo
-3. `sudo rm -f /run/snx-rs.lock` - Remove o lock file
-4. `nohup sudo snx-rs ...` - Inicia nova conexão em background
-5. `sleep 3` - Aguarda 3 segundos
-6. `tail -n 5 /tmp/snx-rs.log` - Exibe últimas 5 linhas do log
+**O que a função faz:**
+1. `snxctl disconnect` — encerra sessão SNX ativa no daemon (command mode)
+2. Copia o perfil `vpnro.conf` para o perfil ativo `snx-rs.conf`
+3. `snxctl connect` — solicita conexão ao daemon `snx-rs.service`
+4. Poll de até 20s em `snxctl status` até "conectado desde"
+
+> Aliases cobrem o caminho **SNX**; para perfis IPsec use `vpn connect <id>` (ou a bandeja).
 
 #### Aliases Globais
 
 | Alias | Descrição | Comando |
 |-------|-----------|---------|
-| `vpnoff` | Desconecta a VPN ativa | `sudo killall snx-rs; sleep 1; sudo rm -f /run/snx-rs.lock; echo 'VPN desconectada'` |
-| `vpnstatus` | Verifica status da conexão | `ip addr show snx-xfrm && tail -n 10 /tmp/snx-rs.log || echo 'VPN não conectada'` |
+| `vpnoff` | Desconecta a VPN ativa | `snxctl disconnect` |
+| `vpnstatus` | Verifica status da conexão | `snxctl status` |
 
 ### Exemplos de Uso
 
@@ -205,9 +205,9 @@ Ao clicar no ícone, o seguinte menu é exibido:
 
 | Item | Ação | Descrição |
 |------|------|-----------|
-| **Status** | - | Mostra estado atual e protocolo conectado |
-| **Conectar {VPN}** | `on_connect()` | Conecta à VPN especificada (SNX ou IPsec) |
-| **Desconectar** | `on_disconnect()` | Desconecta a VPN ativa |
+| **Status** | - | Mostra estado atual (`✓ Conectado`, `✗ Desconectado` ou `⌛ Conectando...`) |
+| **Conectar {VPN}** | `on_connect()` | Dispara conexão assíncrona em thread (`threading.Thread`) sem congelar a UI |
+| **Desconectar** | `on_disconnect()` | Desconecta a VPN ativa de forma assíncrona |
 | **➕ Adicionar VPN...** | `show_vpn_dialog()` | Abre diálogo visual com presets de estados (SC, TO, RO, PR, AM) e seletor SNX/IPsec |
 | **⚙ Gerenciar VPNs...** | `show_management_dialog()`| Lista túneis cadastrados com botões para Editar credenciais ou Remover |
 | **Sair** | `on_quit()` | Encerra o vpn-tray |
@@ -215,14 +215,15 @@ Ao clicar no ícone, o seguinte menu é exibido:
 ### Como Usar
 
 #### Conectar a uma VPN
-1. Clique no ícone da bandeja
-2. Selecione a VPN desejada (ex: `[IPsec] Conectar VPN SC` ou `[SNX] Conectar VPN RO`)
-3. O ícone mudará para conectado ✓ e o tooltip exibirá o estado ativo.
+1. Clique no ícone da bandeja.
+2. Selecione a VPN desejada (ex: `[IPsec] Conectar VPN AMSSP` ou `[SNX] Conectar VPN RO`).
+3. O status exibirá imediatamente `⌛ Conectando [VPN]...` sem travar a interface.
+4. Ao concluir, o ícone atualiza via `GLib.idle_add` e o desktop emite notificação via `notify-send`.
 
 #### Desconectar
-1. Clique no ícone da bandeja
-2. Selecione "Desconectar"
-3. O túnel será encerrado de forma limpa.
+1. Clique no ícone da bandeja.
+2. Selecione "Desconectar".
+3. O status exibirá `⌛ Desconectando...` e o túnel será encerrado em background.
 
 #### Adicionar / Configurar via Interface Gráfica
 1. Clique no ícone da bandeja e selecione **➕ Adicionar VPN...**
@@ -236,220 +237,71 @@ Ao clicar no ícone, o seguinte menu é exibido:
 
 ## Gerenciamento de VPNs
 
-### Via Menu Interativo (`update.sh`)
+### Via Atualização Completa (`update.sh`)
 
-Execute o gerenciador:
+O `update.sh` **não é um menu TUI**: é um fluxo linear de atualização/migração que,
+desde a v2.2.1, cobre userland **e** o lado privilegiado IPsec:
+
 ```bash
+cd vpn-egsys
+git pull
 ./update.sh
 ```
 
-**Menu Principal:**
-```
-╔══════════════════════════════════════╗
-║    vpn-egsys - Gerenciador de VPNs   ║
-╚══════════════════════════════════════╝
+**O que ele faz (resumo das etapas):**
+1. Atualiza snx-rs para v6.0.6 (se necessário) e aplica SUID nos binários
+2. Instala dependências de GUI e `strongswan`
+3. Wizard de credenciais por VPN (`setup_vpn_config`), com escolha de protocolo:
+   `1) SNX` / `2) IPsec (IKEv1 XAuth+PSK — padrão / IKEv2 swanctl opcional)`, campos PSK e rotas
+4. Reinstala `snx-rs.service`, dispatcher NM e dummy-ifaces SNX
+5. Copia `vpn`, `vpn-tray` e `core/` para `~/.local/bin`
+6. **Bloco 10b (privilegiado):** copia `core/` + `vpn-ipsec-apply` para `/usr/lib/vpn-egsys`,
+   regrava `/etc/sudoers.d/vpn-egsys` (validado com `visudo -c`), habilita
+   `strongswan-starter` e roda `vpn-ipsec-apply` (materializa os blocos em `/etc`)
+7. Regenera aliases (bloco marcado `>>> vpn-egsys <<<`), garante PATH e reinicia o tray
 
-  1) Listar VPNs configuradas
-  2) Adicionar nova VPN
-  3) Atualizar VPN existente
-  4) Remover VPN
-  5) Regenerar aliases
-  6) Atualizar vpn-tray
-  0) Sair
-
-Opção: 
-```
-
-#### Opção 1: Listar VPNs
-
-**Comando:**
-```bash
-./update.sh listar
-# ou
-./update.sh list
-```
-
-**Exemplo de saída:**
-```
-VPNs configuradas:
-
-  vpnro → 131.72.155.42 (usuario_ro)
-  vpnpr → acessoremoto.pr.gov.br (usuario_pr)
-  vpnam → sslvpn.prodam.am.gov.br (usuario_am)
-
-  Total: 3 VPN(s)
-```
-
-#### Opção 2: Adicionar Nova VPN
-
-**Comando:**
-```bash
-./update.sh adicionar
-# ou
-./update.sh add
-```
-
-**Processo:**
-```
-Adicionar nova VPN
-
-Nome curto (ex: vpnsp, vpnrj): vpnsp
-Servidor (IP ou hostname): vpn.saude.sp.gov.br
-Usuário: usuario_sp
-Senha: 
-```
-
-> 💡 **Dicas:**
-> - O nome deve ser único
-> - Se não começou com "vpn", ele será prefixado automaticamente
-> - A senha é ocultada durante a digitação
-
-**Arquivo criado:** `~/.config/snx-rs/vpnsp.conf`
-
-#### Opção 3: Atualizar VPN Existente
-
-**Comando:**
-```bash
-./update.sh atualizar
-# ou
-./update.sh update
-```
-
-**Processo:**
-```
-Atualizar VPN existente
-
-VPNs configuradas:
-
-  vpnro → 131.72.155.42 (usuario_ro)
-  vpnpr → acessoremoto.pr.gov.br (usuario_pr)
-  vpnam → sslvpn.prodam.am.gov.br (usuario_am)
-
-Nome da VPN para atualizar: vpnpr
-
-  Servidor atual: acessoremoto.pr.gov.br
-  Usuário atual:  usuario_pr
-
-Novo servidor (Enter para manter): 
-Novo usuário (Enter para manter): novo_usuario
-Nova senha (Enter para manter): 
-```
-
-> 💡 **Dica**: Pressione Enter sem digitar nada para manter o valor atual.
-
-#### Opção 4: Remover VPN
-
-**Comando:**
-```bash
-./update.sh remover
-# ou
-./update.sh remove
-```
-
-**Processo:**
-```
-Remover VPN
-
-VPNs configuradas:
-
-  vpnro → 131.72.155.42 (usuario_ro)
-  vpnpr → acessoremoto.pr.gov.br (usuario_pr)
-  vpnam → sslvpn.prodam.am.gov.br (usuario_am)
-
-Nome da VPN para remover: vpnpr
-Confirma remoção de vpnpr? (s/N): s
-```
-
-> ⚠️ **Cuidado**: A remoção é permanente. O arquivo `.conf` é apagado.
-
-**Arquivo removido:** `~/.config/snx-rs/vpnpr.conf`
-
-#### Opção 5: Regenerar Aliases
-
-**Comando:**
-```bash
-./update.sh aliases
-```
-
-**O que faz:**
-1. Remove os aliases antigos do `.bashrc` e `.zshrc`
-2. Gera novos aliases baseados nas VPNs atuais
-3. Atualiza ambos os arquivos
-
-**Útil quando:**
-- Adicionou ou removeu VPNs
-- Modificou configurações de VPN
-- Os aliases pararam de funcionar
-
-#### Opção 6: Atualizar vpn-tray
-
-**Comando:**
-```bash
-./update.sh tray
-```
-
-**O que faz:**
-1. Para o vpn-tray atual
-2. Copia o novo binário de `vpn-tray` do repositório
-3. Copia os ícones atualizados
-4. Reinicia o vpn-tray
-
-**Útil quando:**
-- Fez modificações no código do vpn-tray
-- Atualizou o repositório
-- O vpn-tray parou de funcionar
-
----
+> Para adicionar/remover VPNs individualmente use o CLI (`vpn add` / `vpn remove <id>`)
+> ou o `vpn-tray` (menu *Configurar VPNs*) — não há subcomandos `./update.sh adicionar`.
 
 ## Casos de Uso Comuns
 
 ### Caso 1: Adicionar Nova VPN
 
-**Objetivo:** Adicionar VPN para um novo servidor
+**Objetivo:** Adicionar VPN para um novo servidor (SNX ou IPsec)
 
 **Passos:**
 ```bash
-# 1. Adicionar via menu interativo
-./update.sh
-# Selecionar opção 2 (Adicionar nova VPN)
+# 1. Assistente do CLI (ou vpn-tray > Configurar VPNs)
+vpn add
+#    id: vpnsp | servidor | usuario | senha
+#    se IPsec: 1) IKEv1 XAuth+PSK (padrao) ou 2) IKEv2; PSK e rotas
 
-# Ou via comando direto
-./update.sh adicionar
+# 2. Materializar o backend IPsec (somente perfis ipsec)
+sudo /usr/lib/vpn-egsys/vpn-ipsec-apply
 
-# 2. Preencher as informações
-# Nome: vpnsp
-# Servidor: vpn.example.com
-# Usuário: meu_usuario
-# Senha: minha_senha
-
-# 3. Regenerar aliases (opcional, é feito automaticamente)
-./update.sh aliases
-
-# 4. Recarregar shell
+# 3. Recarregar shell (aliases sao regenerados pelo update.sh)
 source ~/.bashrc
 
-# 5. Testar
-vpnsp
+# 4. Testar
+vpn connect vpnsp && vpn status
 ```
 
 ### Caso 2: Atualizar Credenciais
 
-**Objetivo:** Mudar a senha de uma VPN existente
+**Objetivo:** Trocar senha de uma VPN existente (ex.: expirada no gateway)
 
 **Passos:**
 ```bash
-# 1. Atualizar via menu
-./update.sh atualizar
-
-# 2. Selecionar a VPN
-# 3. Deixar servidor e usuário em branco (Enter)
-# 4. Digitar nova senha
-
-# 5. Testar conexão
-vpnoff
-sleep 2
-vpnpr
+# Re- grave o perfil com o mesmo id (write_vpn_config substitui o .conf):
+vpn add   # informe o mesmo id e a nova senha
+# IPsec: reaplique os blocos do /etc
+sudo /usr/lib/vpn-egsys/vpn-ipsec-apply
+# SNX: basta reconectar (o connect copia o perfil para snx-rs.conf)
+vpn off && vpn connect vpnpr
 ```
+
+> Se o gateway responder "Your password has expired" (ex.: Prodam), cadastre a senha
+> nova com o usuario no proximo login interativo — nenhum codigo resolve isso do lado cliente.
 
 ### Caso 3: Remover VPN
 
@@ -457,17 +309,10 @@ vpnpr
 
 **Passos:**
 ```bash
-# 1. Remover via menu
-./update.sh remover
-
-# 2. Selecionar a VPN a remover
-# 3. Confirmar com 's'
-
-# 4. Regenerar aliases
-./update.sh aliases
-
-# 5. Recarregar shell
-source ~/.bashrc
+vpn remove vpnpr
+# IPsec: o helper remove apenas os blocos gerenciados daquele perfil
+sudo /usr/lib/vpn-egsys/vpn-ipsec-apply
+source ~/.bashrc   # aliases regenerados no proximo ./update.sh
 ```
 
 ### Caso 4: Solucionar Problemas de Conexão
@@ -476,27 +321,23 @@ source ~/.bashrc
 
 **Passos para diagnóstico:**
 ```bash
-# 1. Verificar logs
-cat /tmp/snx-rs.log
+# SNX
+snxctl status                       # estado do daemon command mode
+journalctl -u snx-rs.service -n 30  # logs do daemon
+ip addr show snx-xfrm               # IP interno atribuido?
+ip route show table all | grep snx  # rotas pushed pelo gateway
 
-# 2. Testar conexão manual
-tail -f /tmp/snx-rs.log &
-sudo snx-rs -m standalone -c ~/.config/snx-rs/vpnpr.conf -l debug
-
-# 3. Verificar interface de rede
-ip addr show snx-xfrm
-
-# 4. Verificar processo
-ps aux | grep snx-rs
-
-# 5. Verificar conectividade
-ping acessoremoto.pr.gov.br
+# IPsec
+sudo /usr/lib/vpn-egsys/vpn-ipsec-apply --check  # perfil dessincronizado? (exit 1)
+ipsec statusall | grep -E 'vpn.*INSTALLED'       # SA instalada?
+ipsec statusall | grep '==='                     # TS reais liberados pelo gateway
 ```
 
 **Soluções comuns:**
-- Verificar credenciais no `.conf`
-- Testar com outro servidor
-- Reiniciar o snx-rs: `sudo killall snx-rs`
+- Verificar credenciais no `.conf` (o connect SNX re-copia o perfil ativo)
+- "Conectado mas sem rota interna": o gateway reduz o traffic selector — o proprio
+  `vpn connect` agora avisa (docs/IPSEC.md §4); e politica do gateway, nao do cliente
+- Reiniciar o daemon SNX: `sudo systemctl restart snx-rs.service`
 
 ### Caso 5: Mudar para Outro Computador
 
@@ -504,19 +345,16 @@ ping acessoremoto.pr.gov.br
 
 **Passos:**
 ```bash
-# No computador antigo:
-# 1. Copiar configurações de VPN
+# No computador antigo (atencao: contem credenciais - transporte cifrado):
 tar -czf vpn-configs.tar.gz ~/.config/snx-rs/
 
 # No computador novo:
-# 1. Instalar vpn-egsys
-# 2. Restaurar configurações
+# 1. sudo ./install.sh   (instalacao completa, incluindo backend IPsec - Etapa 11b)
+# 2. Restaurar configuracoes:
 tar -xzf vpn-configs.tar.gz -C ~/
-
-# 3. Regenerar aliases
-cd vpn-egsys
-./update.sh aliases
-
+chmod 600 ~/.config/snx-rs/*.conf
+# 3. Materializar IPsec:
+sudo /usr/lib/vpn-egsys/vpn-ipsec-apply
 # 4. Recarregar shell
 source ~/.bashrc
 ```
@@ -574,21 +412,22 @@ tail -f /tmp/snx-rs.log | grep -i error
 
 ### Dica 5: Conectar sem Logs
 
-Modifique o alias para não mostrar logs:
+Silencie a função de atalho (SNX):
 ```bash
-# No ~/.bashrc, substitua o alias por:
-alias vpnpr="sudo killall snx-rs 2>/dev/null; sleep 0.5; sudo rm -f /run/snx-rs.lock 2>/dev/null; nohup sudo snx-rs -m standalone -c ~/.config/snx-rs/vpnpr.conf -l info > /dev/null 2>&1 &"
+# No ~/.bashrc, dentro do bloco >>> vpn-egsys <<<, troque `snxctl connect 2>&1` por:
+snxctl connect > /dev/null 2>&1
 ```
 
 ### Dica 6: Conexão com Log Debug
 
-Para solucionar problemas, use log debug:
+Para solucionar problemas, observe o daemon em vez de lançar standalone:
 ```bash
-# Temporariamente
-sudo snx-rs -m standalone -c ~/.config/snx-rs/vpnpr.conf -l debug
+# Logs do daemon command mode em tempo real
+journalctl -u snx-rs.service -f
 
-# Ou crie um alias de debug
-alias vpnpr-debug="sudo killall snx-rs 2>/dev/null; sleep 0.5; sudo rm -f /run/snx-rs.lock 2>/dev/null; nohup sudo snx-rs -m standalone -c ~/.config/snx-rs/vpnpr.conf -l debug > /tmp/snx-rs-debug.log 2>&1 & sleep 3 && tail -n 20 /tmp/snx-rs-debug.log"
+# IPsec: verbose controlado pelo helper/status
+sudo /usr/lib/vpn-egsys/vpn-ipsec-apply --check && ipsec up vpnXX
+ipsec statusall | grep -E 'vpn.*INSTALLED|==='
 ```
 
 ### Dica 7: Criar Atalho para VPN Favorita

@@ -6,7 +6,7 @@ O **vpn-egsys** é um sistema modular multi-protocolo (**Check Point SNX** e **I
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                            vpn-egsys v2.1                                   │
+│                            vpn-egsys v2.2                                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌───────────────────────┐                    ┌──────────────────────────┐  │
@@ -37,6 +37,12 @@ O **vpn-egsys** é um sistema modular multi-protocolo (**Check Point SNX** e **I
 │  └───────────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+> **Nota (v2.2)**: no Linux Engine, o NetworkMgr atende **somente SNX** (dummy-iface). O IPsec é
+> tratado pelo strongSwan **nativo** — stroke (IKEv1 XAuth+PSK, padrão) e swanctl (IKEv2) — via
+> helper privilegiado `vpn-ipsec-apply`, que materializa os blocos gerenciados em
+> `/etc/ipsec.conf`/`/etc/ipsec.secrets` e `/etc/swanctl/conf.d/vpn-egsys.conf`. O plugin
+> strongSwan do NM (IKEv2-only) foi removido do caminho.
 
 ---
 
@@ -136,6 +142,10 @@ flowchart TD
 | `remove_vpn()` | Remove VPN | `~/.config/snx-rs/vpn*.conf` |
 | `regenerate_aliases()` | Recria aliases no shell | `.bashrc`, `.zshrc` |
 | `update_tray()` | Reinicia vpn-tray | Processos |
+| Bloco **10b** — backend IPsec (v2.2.1) | Provisiona o lado privilegiado: copia `core/` + `vpn-ipsec-apply` para `/usr/lib/vpn-egsys`, regrava `/etc/sudoers.d/vpn-egsys` (validado com `visudo -c`), habilita `strongswan-starter` e roda `vpn-ipsec-apply` | `/usr/lib/vpn-egsys/*`, `/etc/sudoers.d/vpn-egsys`, unidades systemd, `/etc/ipsec.*` |
+
+> Desde a v2.2.1, `git pull && ./update.sh` cobre **100%** do cliente em máquina já instalada
+> (userland + helper/sudoers/starter), espelhando a seção 11b do `install.sh`.
 
 **Formato do Arquivo de Configuração (vpn*.conf):**
 
@@ -145,6 +155,20 @@ user-name=usuario
 password=base64_encoded_password
 ignore-server-cert=true
 login-type=vpn
+```
+
+Perfil IPsec (IKEv1 XAuth+PSK — padrão; ver `docs/IPSEC.md`):
+
+```ini
+protocol=ipsec
+ipsec-type=ikev1-xauth        # ou ikev2 (swanctl)
+server-name=138.185.153.20
+user-name=usuario
+password=base64_encoded_password
+psk=base64_encoded_psk
+routes=172.20.100.0/24
+ike=aes256-sha256-modp2048!   # opcional (default do projeto)
+esp=aes256-sha256-modp1536!   # opcional (default do projeto)
 ```
 
 > ⚠️ **Segurança**: A senha é armazenada em base64, o que não é criptografia. Considerar usar um keyring para armazenamento seguro.
@@ -182,13 +206,17 @@ class VPNTray:
     │   ├── Chamado a cada 3 segundos via GLib.timeout_add_seconds
     │   ├── Atualiza ícone (vpn-connected/vpn-disconnected)
     │   └── Atualiza título e label de status
-    ├── on_connect()
-    │   ├── sudo killall snx-rs
-    │   ├── sudo rm -f /run/snx-rs.lock
-    │   └── nohup sudo snx-rs -m standalone -c {conf} -l info
-    ├── on_disconnect()
-    │   ├── sudo killall snx-rs
-    │   └── sudo rm -f /run/snx-rs.lock
+    ├── on_connect() / _async_connect() [v2.2.2]
+    │   ├── threading.Thread(daemon=True) — conexão assíncrona não-bloqueante
+    │   ├── status_item exibe "⌛ Conectando {label}..." imediatamente
+    │   ├── core.vpn_manager.connect_vpn(id)
+    │   │   ├── SNX   → snxctl connect (daemon command mode) + nmcli up <label>
+    │   │   └── IPsec → vpn-ipsec-apply → ipsec up / swanctl --initiate
+    │   ├── GLib.idle_add(self.check_status) — atualização segura da UI
+    │   └── notify-send — notificação nativa no desktop
+    ├── on_disconnect() / _async_disconnect() [v2.2.2]
+    │   ├── threading.Thread(daemon=True) — desconexão assíncrona
+    │   └── core.vpn_manager.disconnect_all()
     └── on_quit()
         └── Gtk.main_quit()
 ```
@@ -199,19 +227,17 @@ class VPNTray:
 sequenceDiagram
     participant U as Usuário
     participant T as vpn-tray
-    participant S as snx-rs
+    participant C as core.vpn_manager
+    participant S as snx-rs (daemon)
     participant K as Kernel
 
     U->>T: Clica "Conectar VPN-X"
-    T->>S: killall snx-rs (sudo)
-    T->>K: rm -f /run/snx-rs.lock (sudo)
-    T->>S: nohup sudo snx-rs -m standalone -c vpn.conf -l info
-    S->>K: Cria interface snx-xfrm
-    S->>/tmp: Escreve logs em snx-rs.log
+    T->>C: connect_vpn(id)
+    C->>S: snxctl connect (perfil ativo em snx-rs.conf)
+    S->>K: Cria interface snx-xfrm + rotas/DNS
     T->>K: ip link show snx-xfrm (a cada 3s)
     K-->>T: Interface existe
     T->>T: Atualiza status para ✓ Conectado
-    T->>T: Troca ícone para vpn-connected
 ```
 
 **Localizações Importantes:**
@@ -257,16 +283,16 @@ User
 
 ### 2. Fluxo de Conexão VPN
 
+SNX (command mode, vigente desde v2.0; o modo standalone legado foi removido do caminho):
+
 ```
-User → vpn-tray (Menu) → on_connect()
+User → vpn/vpn-tray → connect_vpn() → VPNBackend.connect_snx()
   │
-  ├── sudo killall snx-rs
-  ├── sudo rm -f /run/snx-rs.lock
-  └── nohup sudo snx-rs -m standalone -c ~/.config/snx-rs/vpnro.conf -l info
-                                      │
-                                      ├── -m standalone: Modo standalone
-                                      ├── -c: Arquivo de configuração
-                                      └── -l info: Nível de log
+  ├── snxctl disconnect (+ nmcli connection down <label>)
+  ├── cópia do perfil vpnXX.conf → ~/.config/snx-rs/snx-rs.conf (0600)
+  ├── snxctl connect            (dialoga com o daemon snx-rs -m command)
+  └── nmcli connection up <label>   (dummy-iface snx-XX do NM)
+        daemon: systemd unit snx-rs.service (snx-rs -m command, auto-restart)
 ```
 
 Fluxo IPsec (Linux):
@@ -311,7 +337,10 @@ GLib.timeout_add_seconds(3, check_status)
 | Arquivo | Local | Formato | Permissões |
 |---------|-------|---------|-------------|
 | vpn*.conf | `~/.config/snx-rs/` | INI-like | 600 |
-| vpn-egsys | `/etc/sudoers.d/` | Text | 0440 |
+| snx-rs.conf (perfil ativo) | `~/.config/snx-rs/` | INI-like | 600 |
+| sudoers vpn-egsys | `/etc/sudoers.d/` | Text | 0440 |
+| ipsec.conf / ipsec.secrets | `/etc/` | stroke (bloco `# BEGIN/END vpn-egsys (managed)`) | 600 (secrets) |
+| vpn-egsys.conf | `/etc/swanctl/conf.d/` | swanctl (IKEv2) | 600 |
 | .bashrc/.zshrc | `~/` | Bash | 644 |
 
 ### Arquivos Instalados
@@ -319,6 +348,9 @@ GLib.timeout_add_seconds(3, check_status)
 | Arquivo | Local | Tipo |
 |---------|-------|------|
 | vpn-tray | `~/.local/bin/` | Script Python |
+| vpn (CLI) | `~/.local/bin/` | Script Python |
+| core/vpn_manager.py | `~/.local/bin/core/` | Módulo Python (userland) |
+| core/ + vpn-ipsec-apply | `/usr/lib/vpn-egsys/` | Helper privilegiado root (0755) |
 | *.svg | `~/.local/share/icons/vpn-egsys/` | Ícones |
 | vpn-egsys.desktop | `~/.local/share/applications/` | Desktop Entry |
 | vpn-tray.desktop | `~/.config/autostart/` | Autostart |
@@ -328,7 +360,8 @@ GLib.timeout_add_seconds(3, check_status)
 | Processo | Comando | Descrição |
 |----------|---------|-----------|
 | vpn-tray | `python3 ~/.local/bin/vpn-tray` | Monitor de bandeja |
-| snx-rs | `sudo snx-rs -m standalone -c vpn.conf -l info` | Conexão VPN |
+| snx-rs (daemon) | `snx-rs -m command` (via `snx-rs.service`) | Serviço SNX em command mode |
+| charon (strongSwan) | `strongswan-starter.service` | Daemon IPsec (conns stroke de /etc/ipsec.conf) |
 
 ---
 
@@ -336,15 +369,10 @@ GLib.timeout_add_seconds(3, check_status)
 
 ### Permissões Sudoers
 
-O arquivo `/etc/sudoers.d/vpn-egsys` contém:
-
-```
-USER ALL=(ALL) NOPASSWD: /usr/bin/snx-rs, /usr/bin/killall snx-rs, /usr/bin/rm -f /run/snx-rs.lock
-```
-
-Para o backend IPsec, o `install.sh` escreve (após validação `visudo -c`) um
-segundo conjunto restrito — nomes de conexão são sempre sanitizados para
-começarem com `vpn`, então o glob `vpn*` não abre margem de injeção:
+Desde a v2.2.0 o `/etc/sudoers.d/vpn-egsys` instalado pelo `install.sh`/`update.sh` contém
+**somente** o conjunto restrito do backend IPsec (validado com `visudo -cf` antes de aplicar, 0440
+root:root). Nomes de conexão são sempre sanitizados para começarem com `vpn`, então o glob `vpn*`
+não abre margem de injeção:
 
 ```
 USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply,
@@ -354,14 +382,18 @@ USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply,
     /usr/bin/swanctl --list-sas
 ```
 
-**Riscos:**
-- Qualquer usuário com acesso ao terminal pode executar `snx-rs` sem senha
-- O `killall snx-rs` pode ser usado para matar processos de outros usuários
-- O `rm -f /run/snx-rs.lock` é específico e seguro
+O caminho SNX dispensa sudo: o daemon roda como serviço systemd (`snx-rs.service`) e os binários
+`/usr/bin/snx-rs`/`snxctl` recebem SUID; as regras NOPASSWD legadas
+(`snx-rs`, `killall snx-rs`, `rm -f /run/snx-rs.lock`) não são mais escritas — se um host antigo
+ainda as possuir, podem ser removidas com `sudo rm /etc/sudoers.d/vpn-egsys && ./update.sh`.
+
+**Riscos residuais:**
+- NOPASSWD para root nos binários strongSwan listados (mitigado pelo glob `vpn*` e pelo escopo
+  fixo do helper: ele só reescreve blocos entre marcadores `# BEGIN/END vpn-egsys (managed)`)
 
 **Mitigações:**
 - Arquivo com permissões 0440 (root:root)
-- Validado com `visudo -cf` antes de aplicar
+- Validado com `visudo -cf` antes de aplicar (se inválido, NÃO é instalado)
 - Apenas o usuário atual tem permissões (USER)
 
 ### Armazenamento de Senhas
@@ -395,12 +427,13 @@ password=base64_encoded_string
 | gir1.2-gtk-3.0 | 3.0 | GTK3 bindings |
 | gir1.2-ayatanaappindicator3-0.1 | 0.1 | AppIndicator |
 | libwebkit2gtk | 4.0+ | Dependência do AppIndicator |
+| strongswan | 6.x | Backend IPsec (stroke `ipsec` + `swanctl`; unit `strongswan-starter`) |
 
 ### snx-rs
 
 | Versão | Download | Instalação |
 |--------|----------|------------|
-| 5.2.3+ | GitHub Releases | DEB (Debian) / tar.gz (Arch/Fedora) |
+| 6.0.6 (pin; command mode requer >= 5.0) | GitHub Releases | DEB (Debian) / tar.gz (Arch/Fedora) |
 
 **URL Base:** `https://github.com/ancwrd1/snx-rs/releases/download/v{version}/`
 
@@ -433,8 +466,8 @@ password=base64_encoded_string
 |---------|-------|
 | **Linguagens** | Bash, Python 3 |
 | **Frameworks** | GTK3, PyGObject, Ayatana AppIndicator |
-| **Total de Linhas** | ~640 (Bash + Python) |
-| **Arquivos de Código** | 4 (install.sh, update.sh, uninstall.sh, vpn-tray) |
+| **Total de Linhas** | ~3.860 (Bash + Python, incluindo suíte de testes) |
+| **Arquivos de Código** | 12 (install.sh, update.sh, uninstall.sh, user-setup.sh, nm-snx-setup.sh, 99-snx-vpn.sh, vpn, vpn-tray, vpn-ipsec-apply, core/vpn_manager.py, tests/×3) + `macos/` |
 | **Arquivos de Configuração** | 1 (README.md, LICENSE, .gitignore, package.json) |
 | **Ícones** | 2 (SVG) |
 | **Documentação** | 6+ (README + docs/) |

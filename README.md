@@ -6,6 +6,9 @@ Gerenciador universal de VPNs, monitor de bandeja (`vpn-tray`), utilitário de t
 - **Backend IPsec stroke IKEv1 XAuth+PSK (padrão)**: suporte real a gateways FortiGate (AM SSP); conexão sem depender do plugin strongSwan do NetworkManager (IKEv2-only), com materialização automática dos perfis em `/etc/ipsec.conf`/`ipsec.secrets` via helper `vpn-ipsec-apply` + sudoers NOPASSWD restrito.
 - **IKEv2 mantido via swanctl** (`ipsec-type=ikev2` gera `/etc/swanctl/conf.d/vpn-egsys.conf`).
 - **Confirmação de SA `INSTALLED`** antes de reportar túnel conectado.
+- **Verificação de rotas liberadas (v2.2.1)**: compara os traffic selectors instalados com o campo
+  `routes` do perfil e avisa explicitamente quando o gateway reduz o túnel e não libera a rede interna.
+- **Bandeja Assíncrona Não-Bloqueante (v2.2.2)**: o `vpn-tray` conecta e desconecta em background (`threading.Thread`), exibindo status `⌛ Conectando...` imediato e emitindo notificações via `notify-send`, sem congelar a interface gráfica durante timeouts ou desafios XAuth do FortiGate.
 - **Presets Estaduais Rápidos na Bandeja (`vpn-tray`)**: Configuração em um clique para Santa Catarina (SC), Tocantins (TO), Rondônia (RO), Paraná (PR) e Amazonas (AM).
 - **Interface Reativa Multi-Protocolo**: Alternância automática de visibilidade para campos de IPsec (Chave PSK e Rotas customizadas).
 - **Hardening Multi-Usuário (`SUDO_USER`)**: Execuções com `sudo` isolam o home do usuário real e inicializam a bandeja na sessão gráfica correta (sem rodar como root).
@@ -44,6 +47,8 @@ O instalador:
 5. Cria aliases no terminal
 6. Instala VPN Tray com autostart
 7. No GNOME: instala extensão AppIndicator
+8. Provisiona o backend IPsec privilegiado (helper `/usr/lib/vpn-egsys/vpn-ipsec-apply`,
+   sudoers NOPASSWD restrito a `vpn*`, `strongswan-starter` e apply dos blocos em `/etc`)
 
 ## Atualização (PCs com versão anterior)
 
@@ -148,10 +153,11 @@ Use `ipsec-type=ikev2` para gateways IKEv2 (gerenciado via `swanctl conf.d`).
 ## Dependências
 
 Instaladas automaticamente:
-- `snx-rs` v5.x+ (com `snxctl`)
+- `snx-rs` v6.0.6 (com `snxctl`; command mode requer >= 5.0)
 - `python3-gi` (PyGObject)
 - `libayatana-appindicator`
 - `networkmanager`
+- `strongswan` (stroke/swanctl — backend IPsec; o plugin `network-manager-strongswan` não é usado)
 - `gnome-shell-extension-appindicator` (apenas GNOME)
 
 ## Desinstalação

@@ -30,10 +30,19 @@ Prover aos times de engenharia, DevOps e suporte N1/N2/N3 uma plataforma corpora
 - [x] Formalização das diretrizes operacionais de governança com [`AGENTS.md`](../AGENTS.md) e tríade de skills (`vpn-commit`, `vpn-docs-sync`, `vpn-jira-sync`).
 
 ### Fase 2.1: Pentest Black Box, Presets Estaduais & Hardening Multi-Usuário (Concluída - v2.1.1)
-- [x] Bateria de Pentest Defensivo Black Box (ACH-VPN-001 a ACH-VPN-010) com 18/18 testes verdes no Quality Gate.
+- [x] Bateria de Pentest Defensivo Black Box (ACH-VPN-001 a ACH-VPN-010) com 18/18 testes verdes no Quality Gate (total vigente após a Fase 2.2: 40 testes).
 - [x] Diálogo gráfico com Presets Rápidos de Estados (SC, TO, RO, PR, AM) e alternância reativa de campos IPsec no `vpn-tray`.
 - [x] Hardening Multi-Usuário com resolução de `$SUDO_USER`, permissão `0600`, e autostart sem root.
 - [x] Documento de governança de segurança [`docs/SECURITY.md`](SECURITY.md).
+
+### Fase 2.2: Backend IPsec nativo stroke IKEv1 XAuth+PSK & Helper Privilegiado (Concluída - v2.2.0/2.2.1)
+- [x] IKEv1 XAuth+PSK (stroke) como padrão do projeto — suporte real a gateways FortiGate (VPN AM SSP), que rejeitam IKEv2 (`NO_PROPOSAL_CHOSEN`); plugin strongSwan do NetworkManager removido do caminho.
+- [x] Helper root `vpn-ipsec-apply` (`/usr/lib/vpn-egsys/`) materializando blocos gerenciados em `/etc/ipsec.conf`, `/etc/ipsec.secrets` e `/etc/swanctl/conf.d/vpn-egsys.conf`, com sudoers NOPASSWD restrito a conns `vpn*` (validado com `visudo -c`).
+- [x] Conexão sem NM: apply → `ipsec up`/`swanctl --initiate` → poll de SA `INSTALLED` (parse corrigido para o formato real com chaves `conn{n}:`).
+- [x] **Verificação de rotas liberadas pelo gateway** (v2.2.1): `installed_remote_ts` + `missing_released_routes` com aviso explícito de traffic selector reduzido; validado ao vivo contra gateway simulado em netns.
+- [x] **Bandeja Assíncrona Não-Bloqueante (v2.2.2)**: concorrência via `threading.Thread(daemon=True)` em `vpn-tray` eliminando congelamentos de UI durante timeouts de rede ou desafios XAuth, com feedback imediato `⌛ Conectando...` e notificações desktop nativas.
+- [x] `update.sh` (bloco 10b) provisiona helper + sudoers + `strongswan-starter` — fluxo do analista `git clone`/`git pull && ./update.sh` com cobertura 100% em máquina já instalada.
+- [x] Suíte expandida para 40 testes (renderizadores, escapes, statusall real, cobertura de rotas, idempotência de marcadores).
 
 ### Fase 3: Segurança Avançada & Integração com Keyring (Planejada - Q4 2026)
 - [ ] **Integração com Keyring do Sistema**:
@@ -44,6 +53,9 @@ Prover aos times de engenharia, DevOps e suporte N1/N2/N3 uma plataforma corpora
 - [ ] **Health-Check Proativo & Auto-Healing**:
   - Monitoramento contínuo da integridade do túnel com ping periódico para IPs internos da rede estadual.
   - Reconexão transparente em caso de perda transitória de pacotes.
+- [ ] **Uninstall completo do backend IPsec**:
+  - `uninstall.sh` deve embutir `vpn-ipsec-apply --uninstall`, remover `/etc/sudoers.d/vpn-egsys`,
+    desabilitar `strongswan-starter` e limpar `/usr/lib/vpn-egsys` (hoje é procedimento manual).
 
 ### Fase 4: Integração de Observabilidade e SAPA 2.0 (Planejada - Q1 2027)
 - [ ] **Plugin para o Orion Web**:

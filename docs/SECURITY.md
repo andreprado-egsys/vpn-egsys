@@ -19,6 +19,15 @@ Este documento consolida a arquitetura de segurança, matriz de mitigação cont
 | **ACH-VPN-009** | Injeção de Parâmetros Maliciosos no CLI `vpn` | Alta | Bloqueio antecipado no parser CLI (`cmd_connect` e `cmd_remove`) rejeitando qualquer caractere especial com código de erro 1. | `test_ach_vpn_009_cli_injection_resilience` |
 | **ACH-VPN-010** | XML Injection no LaunchAgent macOS | Média | Validação estrita do XML com `xml.etree.ElementTree`, garantindo integridade de sintaxe do `plist`. | `test_ach_vpn_010_macos_plist_xml_integrity` |
 
+### Extensões da v2.2.x (superfície IPsec stroke)
+- **ACH-VPN-006/007 estendidos ao helper privilegiado**: a varredura estática cobre agora
+  `vpn-ipsec-apply` (ausência de `shell=True`, caminhos restritos a `/etc` e `/usr/lib/vpn-egsys`,
+  segredos apenas de `~/.config/snx-rs/*.conf` 0600 decodificados em runtime).
+- **Injeção em blocos stroke**: `escape_stroke_value()` neutraliza `"` , `\` e controles (`\r\n`)
+  antes de qualquer interpolação em `/etc/ipsec.conf`/`ipsec.secrets`; nomes de conexão são
+  restritos ao padrão `vpn[a-z0-9]*` pelo `write_vpn_config`, o que também garante que o
+  NOPASSWD do sudoers (`ipsec up vpn*`) nunca possa ser usado para conns de terceiros.
+
 ---
 
 ## 🧪 Execução do Quality Gate de Segurança

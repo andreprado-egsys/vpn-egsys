@@ -64,6 +64,16 @@ chmod +x install.sh
 
 > 💡 **Nota de Segurança**: Se o script for executado com `sudo ./install.sh`, o instalador detecta automaticamente a variável `$SUDO_USER` e o home do usuário não-root original, garantindo que as configurações de VPN (`~/.config/snx-rs`), atalhos e o autostart do `vpn-tray` sejam instalados para o seu usuário e executados sob sua sessão gráfica (e não sob o usuário `root`).
 
+### Fluxo do Analista (padrão egSYS)
+
+| Cenário | Comando | Escopo |
+|---------|---------|--------|
+| **Máquina nova** | `git clone … && sudo ./install.sh` | Instalação completa: deps, snx-rs, systemd,NM, tray, wizard, helper `/usr/lib/vpn-egsys/vpn-ipsec-apply`, sudoers NOPASSWD restrito, `strongswan-starter` (Etapa 11b) |
+| **Máquina já instalada (manutenção)** | `git pull && ./update.sh` | Desde a v2.2.1 cobre **100%** do cliente: userland (`vpn`, `vpn-tray`, `core/`) **e** o lado privilegiado IPsec (bloco 10b: helper + sudoers + starter + apply) |
+
+Não é preciso desinstalar/reinstalar para atualizar: o `update.sh` é idempotente e regrava os
+blocos gerenciados em `/etc` apenas quando há diff (`vpn-ipsec-apply --check` reporta).
+
 ---
 
 ## Processo de Instalação Detalhado
@@ -100,6 +110,7 @@ sudo apt install -y \
     python3-gi \
     gir1.2-gtk-3.0 \
     gir1.2-ayatanaappindicator3-0.1 \
+    strongswan \
     libwebkit2gtk-4.1-0  # ou libwebkit2gtk-4.0-37
 ```
 
@@ -119,6 +130,7 @@ sudo pacman -S --needed --noconfirm \
     python-gobject \
     gtk3 \
     libayatana-appindicator \
+    strongswan \
     webkit2gtk
 ```
 
@@ -137,6 +149,7 @@ sudo dnf install -y \
     python3-gobject \
     gtk3 \
     libayatana-appindicator-gtk3 \
+    strongswan \
     webkit2gtk4.1
 ```
 
@@ -148,9 +161,9 @@ sudo dnf install -y \
 
 ### Etapa 3: Instalação do snx-rs
 
-O `snx-rs` é um cliente VPN Check Point de código aberto. O instalador baixará e instalará automaticamente a versão 5.2.3+.
+O `snx-rs` é um cliente VPN Check Point de código aberto. O instalador baixará e instalará automaticamente a versão 6.0.6 (pin; command mode requer >= 5.0).
 
-**Versão instalada:** 5.2.3 (ou superior se disponível)
+**Versão instalada:** 6.0.6
 
 **Processo por distro:**
 
@@ -159,7 +172,7 @@ O `snx-rs` é um cliente VPN Check Point de código aberto. O instalador baixar�
 ```bash
 # Download do pacote DEB
 curl -fSL -o /tmp/snx-rs.deb \
-    "https://github.com/ancwrd1/snx-rs/releases/download/v5.2.3/snx-rs_5.2.3_amd64.deb"
+    "https://github.com/ancwrd1/snx-rs/releases/download/v6.0.6/snx-rs_6.0.6_amd64.deb"
 
 # Instalação
 sudo apt install -y /tmp/snx-rs.deb
@@ -173,7 +186,7 @@ rm -f /tmp/snx-rs.deb
 ```bash
 # Download do tarball
 curl -fSL -o /tmp/snx-rs.tar.gz \
-    "https://github.com/ancwrd1/snx-rs/releases/download/v5.2.3/snx-rs-v5.2.3-x86_64-unknown-linux-gnu.tar.gz"
+    "https://github.com/ancwrd1/snx-rs/releases/download/v6.0.6/snx-rs-v6.0.6-x86_64-unknown-linux-gnu.tar.gz"
 
 # Extrair
 tar -xf /tmp/snx-rs.tar.gz -C /tmp/snx-rs-extract
@@ -189,24 +202,31 @@ rm -rf /tmp/snx-rs-extract /tmp/snx-rs.tar.gz
 **Verificar instalação:**
 ```bash
 snx-rs --version
-# Deve mostrar: snx-rs 5.2.3
+# Deve mostrar: snx-rs 6.0.6 (command mode requer >= 5.0)
 ```
 
 ### Etapa 4: Configuração do Sudoers
 
 Cria o arquivo `/etc/sudoers.d/vpn-egsys` com permissões NOPASSWD para os comandos necessários.
 
-**Conteúdo do arquivo:**
+**Conteúdo (v2.2.x — somente backend IPsec; o SNX não precisa de sudo: daemon systemd + SUID):**
 ```
-USER ALL=(ALL) NOPASSWD: /usr/bin/snx-rs, /usr/bin/killall snx-rs, /usr/bin/rm -f /run/snx-rs.lock
+USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply,
+    /usr/bin/ipsec up vpn*, /usr/bin/ipsec down vpn*,
+    /usr/bin/ipsec statusall, /usr/bin/ipsec reload,
+    /usr/bin/swanctl --initiate *, /usr/bin/swanctl --terminate *,
+    /usr/bin/swanctl --list-sas
 ```
 
+O glob `vpn*` é seguro porque o `write_vpn_config` sanitiza todo nome de conexão para
+`vpn[a-z0-9]+` — impossível apontar para conns de terceiros.
+
 **Processo:**
-1. Detecta caminho do `snx-rs` e `killall`
-2. Cria regra com NOPASSWD
-3. Valida sintaxe com `sudo visudo -cf`
+1. Detecta caminho real de `ipsec`/`swanctl` (`command -v`)
+2. Cria regras com NOPASSWD
+3. Valida sintaxe com `sudo visudo -cf` **antes** de instalar
 4. Aplica permissões 0440 (root:root)
-5. Se validação falhar, remove o arquivo por segurança
+5. Se validação falhar, NÃO instala (fallback: senha sudo interativa)
 
 **Localização:** `/etc/sudoers.d/vpn-egsys`
 **Permissões:** `0440` (somente leitura para root e grupo root)
@@ -221,13 +241,13 @@ O instalador solicitará credenciais para as seguintes VPNs padrão:
 | `vpnpr` | VPN Paraná | acessoremoto.pr.gov.br |
 | `vpnam` | VPN Amazonas | sslvpn.prodam.am.gov.br |
 
-**Para cada VPN:**
-1. Exibe nome e descrição
-2. Solicita usuário
-3. Solicita senha (input oculto)
-4. Cria arquivo `~/.config/snx-rs/{alias}.conf`
+**Para cada VPN** o assistente pergunta, nesta ordem:
+1. **Protocolo**: `1) Check Point SSL (SNX)` [padrão] / `2) IPsec (IKEv1 XAuth+PSK — padrão; IKEv2/swanctl opcional)`
+2. Dentro de IPsec: **Tipo de IKEv** `1=IKEv1 XAuth+PSK (padrão) / 2=IKEv2 swanctl`, PSK (opcional) e rotas a injetar (opcional)
+3. Usuário e senha (input oculto)
+4. Cria `~/.config/snx-rs/{alias}.conf` (0600)
 
-**Formato do arquivo .conf:**
+**Formato do arquivo .conf (SNX):**
 ```ini
 server-name={servidor}
 user-name={usuario}
@@ -236,7 +256,23 @@ ignore-server-cert=true
 login-type=vpn
 ```
 
-> ✅ **Opcional**: Você pode pular a configuração de qualquer VPN pressionando Enter sem digitar nada. As VPNs podem ser adicionadas posteriormenta via `./update.sh`.
+**Formato (IPsec — IKEv1 XAuth+PSK, validado contra FortiGate AM SSP):**
+```ini
+protocol=ipsec
+ipsec-type=ikev1-xauth
+server-name={gateway}
+user-name={usuario}
+password={senha_base64}
+psk={psk_base64}
+routes={rede_interna/24,...}
+```
+
+> ✅ **Opcional**: você pode pular qualquer VPN pressionando Enter sem digitar nada. VPNs podem
+> ser adicionadas depois via `vpn add`, pelo `vpn-tray` (Configurar VPNs) ou por `./update.sh`.
+
+> ℹ️ Ao final, a **Etapa 11b** materializa os perfis IPsec: helper `vpn-ipsec-apply` grava os
+> blocos gerenciados em `/etc/ipsec.conf`/`/etc/ipsec.secrets` (IKEv1) ou
+> `/etc/swanctl/conf.d/vpn-egsys.conf` (IKEv2), habilita `strongswan-starter` e faz `ipsec reload`.
 
 ### Etapa 6: Geração de Aliases
 
@@ -246,16 +282,19 @@ Cria atalhos no shell para conexão rápida às VPNs.
 - `~/.bashrc`
 - `~/.zshrc` (se existir)
 
-**Aliases gerados:**
+**Aliases gerados (modelo vigente — command mode via `snxctl`):**
 ```bash
 # >>> vpn-egsys >>>
-alias vpnro="sudo killall snx-rs 2>/dev/null; sleep 0.5; sudo rm -f /run/snx-rs.lock 2>/dev/null; nohup sudo /usr/bin/snx-rs -m standalone -c ~/.config/snx-rs/vpnro.conf -l info > /tmp/snx-rs.log 2>&1 & sleep 3 && tail -n 5 /tmp/snx-rs.log"
-alias vpnpr="..."
-alias vpnam="..."
-alias vpnoff="sudo killall snx-rs 2>/dev/null; sleep 1; sudo rm -f /run/snx-rs.lock 2>/dev/null; echo 'VPN desconectada'"
-alias vpnstatus="ip addr show snx-xfrm 2>/dev/null && tail -n 10 /tmp/snx-rs.log 2>/dev/null || echo 'VPN não conectada'"
+vpnro() { snxctl disconnect 2>/dev/null; sleep 1; cp ~/.config/snx-rs/vpnro.conf ~/.config/snx-rs/snx-rs.conf; snxctl connect 2>&1; for i in $(seq 1 20); do snxctl status 2>/dev/null | grep -qiE 'conectado desde|connected since' && echo "✓ vpnro conectada" && return 0; sleep 1; done; echo "✗ Timeout"; }
+vpnpr() { ... }   # idem, por perfil
+vpnam() { ... }   # idem, por perfil
+vpnoff() { snxctl disconnect 2>/dev/null; echo "VPN desconectada"; }
+vpnstatus() { snxctl status; }
 # <<< vpn-egsys <<<
 ```
+
+Para IPsec use o CLI universal (`vpn connect <id>` / `vpn status` / `vpn off`) — os aliases acima
+são específicos do caminho SNX.
 
 **Marcadores:**
 - Início: `# >>> vpn-egsys >>>`
@@ -516,9 +555,11 @@ alias | grep vpn
 tail -n 20 /tmp/snx-rs.log
 ```
 
-**2. Testar conexão manual:**
+**2. Testar conexão manual (command mode via daemon):**
 ```bash
-sudo snx-rs -m standalone -c ~/.config/snx-rs/vpnro.conf -l debug
+cp ~/.config/snx-rs/vpnro.conf ~/.config/snx-rs/snx-rs.conf
+snxctl connect && snxctl status
+journalctl -u snx-rs.service -n 30   # logs do daemon command mode
 ```
 
 **3. Verificar interface de rede:**
@@ -563,33 +604,37 @@ sudo dnf install -y git curl python3-gobject gtk3 libayatana-appindicator-gtk3 w
 
 **Debian/Ubuntu:**
 ```bash
-wget https://github.com/ancwrd1/snx-rs/releases/download/v5.2.3/snx-rs_5.2.3_amd64.deb
-sudo apt install -y ./snx-rs_5.2.3_amd64.deb
-rm snx-rs_5.2.3_amd64.deb
+wget https://github.com/ancwrd1/snx-rs/releases/download/v6.0.6/snx-rs_6.0.6_amd64.deb
+sudo apt install -y ./snx-rs_6.0.6_amd64.deb
+rm snx-rs_6.0.6_amd64.deb
 ```
 
 **Arch/Fedora:**
 ```bash
-wget https://github.com/ancwrd1/snx-rs/releases/download/v5.2.3/snx-rs-v5.2.3-x86_64-unknown-linux-gnu.tar.gz
-tar -xf snx-rs-v5.2.3-x86_64-unknown-linux-gnu.tar.gz
+wget https://github.com/ancwrd1/snx-rs/releases/download/v6.0.6/snx-rs-v6.0.6-x86_64-unknown-linux-gnu.tar.gz
+tar -xf snx-rs-v6.0.6-x86_64-unknown-linux-gnu.tar.gz
 sudo install -m 755 snx-rs /usr/bin/
 sudo install -m 755 snxctl /usr/bin/  # se existir
-rm -rf snx-rs-v5.2.3-x86_64-unknown-linux-gnu* snx-rs
+rm -rf snx-rs-v6.0.6-x86_64-unknown-linux-gnu* snx-rs
 ```
 
-### 3. Configurar Sudoers
+### 3. Configurar Sudoers (backend IPsec — o mesmo formato do install.sh)
 
 ```bash
-# Criar arquivo
-echo "$USER ALL=(ALL) NOPASSWD: /usr/bin/snx-rs, /usr/bin/killall snx-rs, /usr/bin/rm -f /run/snx-rs.lock" | sudo tee /etc/sudoers.d/vpn-egsys > /dev/null
+# Criar arquivo (substitua $USER pelo usuário analista)
+cat <<EOF | sudo tee /etc/sudoers.d/vpn-egsys > /dev/null
+$USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply, /usr/bin/ipsec up vpn*, /usr/bin/ipsec down vpn*, /usr/bin/ipsec statusall, /usr/bin/ipsec reload, /usr/bin/swanctl --initiate *, /usr/bin/swanctl --terminate *, /usr/bin/swanctl --list-sas
+EOF
 
 # Ajustar permissões
 sudo chmod 0440 /etc/sudoers.d/vpn-egsys
 sudo chown root:root /etc/sudoers.d/vpn-egsys
 
-# Validar
+# Validar ANTES de usar (se falhar, remova o arquivo)
 sudo visudo -cf /etc/sudoers.d/vpn-egsys
 ```
+
+> O caminho SNX não exige sudo (daemon `snx-rs.service` + SUID nos binários).
 
 ### 4. Configurar VPNs
 
@@ -613,9 +658,9 @@ chmod 600 ~/.config/snx-rs/vpnro.conf
 Adicione ao seu `~/.bashrc`:
 ```bash
 # >>> vpn-egsys >>>
-alias vpnro="sudo killall snx-rs 2>/dev/null; sleep 0.5; sudo rm -f /run/snx-rs.lock 2>/dev/null; nohup sudo snx-rs -m standalone -c ~/.config/snx-rs/vpnro.conf -l info > /tmp/snx-rs.log 2>&1 & sleep 3 && tail -n 5 /tmp/snx-rs.log"
-alias vpnoff="sudo killall snx-rs 2>/dev/null; sleep 1; sudo rm -f /run/snx-rs.lock 2>/dev/null; echo 'VPN desconectada'"
-alias vpnstatus="ip addr show snx-xfrm 2>/dev/null && tail -n 10 /tmp/snx-rs.log 2>/dev/null || echo 'VPN não conectada'"
+vpnro() { snxctl disconnect 2>/dev/null; sleep 1; cp ~/.config/snx-rs/vpnro.conf ~/.config/snx-rs/snx-rs.conf; snxctl connect 2>&1; for i in $(seq 1 20); do snxctl status 2>/dev/null | grep -qiE 'conectado desde|connected since' && echo "✓ vpnro conectada" && return 0; sleep 1; done; echo "✗ Timeout"; }
+vpnoff() { snxctl disconnect 2>/dev/null; echo "VPN desconectada"; }
+vpnstatus() { snxctl status; }
 # <<< vpn-egsys <<<
 ```
 
@@ -679,11 +724,17 @@ Ou manualmente:
 ```bash
 # Parar processos
 killall vpn-tray 2>/dev/null || true
-killall snx-rs 2>/dev/null || true
+sudo systemctl stop snx-rs.service 2>/dev/null || true
 sudo rm -f /run/snx-rs.lock
 
+# Backend IPsec (não coberto pelo uninstall.sh — gap na Roadmap Fase 3)
+sudo /usr/lib/vpn-egsys/vpn-ipsec-apply --uninstall 2>/dev/null || true
+sudo systemctl disable --now strongswan-starter 2>/dev/null || true
+sudo rm -rf /usr/lib/vpn-egsys
+
 # Remover arquivos
-rm -f ~/.local/bin/vpn-tray
+rm -f ~/.local/bin/vpn-tray ~/.local/bin/vpn
+rm -rf ~/.local/bin/core
 rm -rf ~/.local/share/icons/vpn-egsys
 rm -f ~/.local/share/applications/vpn-egsys.desktop
 rm -f ~/.config/autostart/vpn-tray.desktop

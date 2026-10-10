@@ -4,6 +4,29 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.2.2] - 2026-10-10
+
+### Adicionado
+- **Execução assíncrona não-bloqueante no `vpn-tray`** — as chamadas de conexão e
+  desconexão (`connect_vpn` e `disconnect_all`) agora operam em threads de segundo
+  plano (`threading.Thread(daemon=True)`), eliminando o congelamento da interface
+  gráfica GTK durante negociações IPsec e timeouts de gateway (ex: FortiGate com 3
+  desafios XAuth).
+- **Feedback visual imediato e notificações no Desktop** — o status do item de menu
+  muda instantaneamente para `⌛ Conectando [VPN]...` ou `⌛ Desconectando...` ao
+  clique do analista, atualizando o ícone de forma thread-safe via `GLib.idle_add`
+  e disparando notificações nativas pelo `notify-send` com o resultado do backend.
+
+### Corrigido
+- **Alinhamento do fluxo automático IPsec AM SSP** — diagnóstico do incidente com
+  sintaxe de `/etc/ipsec.conf` (indentação na linha 1) e correção do perfil
+  `vpnamssp.conf` de `ikev2` para `ikev1-xauth`, assegurando que o helper
+  `vpn-ipsec-apply` gere os blocos gerenciados automaticamente no `/etc/` sem
+  necessidade de intervenção manual do usuário.
+- **Relatório formal de diagnóstico para a SSP/AM** — geração de documento técnico
+  auditável (`RELATORIO_TECNICO_VPN_SSP_AM.md`) com evidências brutas de IKE/XAuth
+  para alinhamento junto à equipe de infraestrutura do CICC/SSP.
+
 ---
 
 ## [2.2.1] - 2026-10-10

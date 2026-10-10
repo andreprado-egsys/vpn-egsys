@@ -20,6 +20,7 @@ vpn-egsys/
 │
 ├── vpn                    # CLI universal de terminal (Linux & macOS)
 ├── vpn-tray               # Monitor de bandeja (GTK no Linux / pystray no macOS)
+├── vpn-ipsec-apply        # Helper privilegiado root: materializa blocos stroke/swanctl em /etc
 │
 ├── core/                  # Módulos Python unificados
 │   ├── __init__.py
@@ -39,7 +40,7 @@ vpn-egsys/
 ├── update.sh              # Gerenciador e migrador de VPNs
 ├── uninstall.sh           # Script de desinstalação
 ├── user-setup.sh          # Setup sem privilégios de administrador
-├── nm-snx-setup.sh        # Provisionador NetworkManager (SNX e StrongSwan)
+├── nm-snx-setup.sh        # Provisionador NetworkManager (SNX — dummy-iface; IPsec não passa pelo NM)
 ├── 99-snx-vpn.sh          # Dispatcher NetworkManager
 │
 ├── icons/                 # Ícones SVG de status
@@ -50,7 +51,7 @@ vpn-egsys/
     ├── ARQUITETURA.md     # Arquitetura do sistema
     ├── DESENVOLVIMENTO.md # Este arquivo
     ├── INSTALAÇÃO.md      # Guia de instalação detalhado
-    ├── IPSEC.md           # Manual do protocolo IPsec (IKEv2)
+    ├── IPSEC.md           # Manual do protocolo IPsec (IKEv1 XAuth+PSK padrão / IKEv2)
     ├── MACOS.md           # Manual de instalação e uso no macOS
     ├── ROADMAP.md         # Plano de evolução estratégica
     ├── SECURITY.md        # Política de segurança e matriz de pentest
@@ -120,7 +121,7 @@ sudo dnf install -y \
 ### 1. `install.sh` - Script de Instalação
 
 **Linguagem:** Bash
-**Linhas:** ~247
+**Linhas:** ~524
 **Responsabilidade:** Instalação completa do sistema
 
 #### Funções Principais
@@ -139,12 +140,20 @@ install_deps() {
 
 # Instalação do snx-rs
 install_snx_rs() {
-    # Baixa e instala snx-rs v5.2.3+
+    # Baixa e instala snx-rs v6.0.6 (command mode requer >= 5.0)
 }
 
 # Configuração do sudoers
 setup_sudoers() {
-    # Cria /etc/sudoers.d/vpn-egsys
+    # Cria /etc/sudoers.d/vpn-egsys (valida com visudo -c antes de instalar)
+}
+
+# Provisionamento do backend IPsec (seção 11b)
+provision_ipsec_backend() {
+    # Copia core/ + vpn-ipsec-apply para /usr/lib/vpn-egsys
+    # Escreve sudoers NOPASSWD restrito (ipsec up|down vpn*, swanctl, apply)
+    # Habilita strongswan-starter (desabilita strongswan/charon-systemd)
+    # Roda vpn-ipsec-apply --user $TARGET_USER
 }
 
 # Configuração de VPN
@@ -166,7 +175,7 @@ install_tray() {
 #### Variáveis Globais
 
 ```bash
-SNX_RS_VERSION="5.2.3"
+SNX_RS_VERSION="6.0.6"
 CONFIG_DIR="$HOME/.config/snx-rs"
 LOCAL_BIN="$HOME/.local/bin"
 APPS_DIR="$HOME/.local/share/applications"
@@ -187,108 +196,76 @@ SUDOERS_FILE="/etc/sudoers.d/vpn-egsys"
 ### 2. `update.sh` - Gerenciador de VPNs
 
 **Linguagem:** Bash
-**Linhas:** ~205
-**Responsabilidade:** Gerenciamento interativo de VPNs
+**Linhas:** ~376
+**Responsabilidade:** Atualização/migração linear da instalação (Linux) — desde a v2.2.1 cobre também o lado privilegiado IPsec, sendo `git pull && ./update.sh` suficiente em máquina já instalada. (No macOS delega para `macos/install_macos.sh`.)
 
-#### Funções Principais
-
-```bash
-# Listar VPNs
-list_vpns() {
-    # Exibe VPNs configuradas com servidor e usuário
-}
-
-# Adicionar VPN
-add_vpn() {
-    # Solicita nome, servidor, usuário, senha
-    # Cria arquivo .conf em base64
-    # Regenera aliases e atualiza tray
-}
-
-# Atualizar VPN
-update_vpn() {
-    # Atualiza servidor, usuário e/ou senha
-}
-
-# Remover VPN
-remove_vpn() {
-    # Remove arquivo .conf
-    # Regenera aliases e atualiza tray
-}
-
-# Regenerar aliases
-regenerate_aliases() {
-    # Remove bloco antigo
-    # Gera novos aliases para todas as VPNs
-}
-
-# Atualizar tray
-update_tray() {
-    # Para, copia novos arquivos e reinicia
-}
-
-# Menu principal
-show_menu() {
-    # Exibe menu TUI
-}
-```
-
-#### Fluxo Principal
+#### Etapas (ordem de execução)
 
 ```bash
-# Modo interativo (sem argumentos)
-while true; do
-    show_menu
-    read -rp "Opção: " opt
-    case "$opt" in
-        1) list_vpns ;;
-        2) add_vpn ;;
-        3) update_vpn ;;
-        4) remove_vpn ;;
-        5) regenerate_aliases ;;
-        6) update_tray ;;
-        0) exit 0 ;;
-        *) warn "Opção inválida." ;;
-    esac
-done
-
-# Modo argumento (com argumentos)
-case "$1" in
-    listar|list) list_vpns ;;
-    adicionar|add) add_vpn ;;
-    atualizar|update) update_vpn ;;
-    remover|remove) remove_vpn ;;
-    aliases) regenerate_aliases ;;
-    tray) update_tray ;;
-    *) echo "Uso: $0 [listar|adicionar|atualizar|remover|aliases|tray]" ;;
-esac
+# 0. Aquisição de privilégios sudo (zenity/kdialog quando gráfico)
+# 1. Parada de instâncias ativas (vpn-tray, snx-rs, lock file)
+# 2. Detecção de distro (apt/pacman)
+# 3. Pré-requisitos (systemd, NetworkManager ativo)
+# 4. Atualização snx-rs -> v6.0.6 se major < 5 + SUID em /usr/bin/snx-rs|snxctl
+# 5. Dependências de GUI (python-gi, appindicator, networkmanager, webkit2gtk)
+# 6. setup_vpn_config(): wizard de credenciais por VPN — protocolo 1=SNX /
+#    2=IPsec, e dentro de IPsec: 1=IKEv1 XAuth+PSK (padrão) / 2=IKEv2 swanctl,
+#    com campos psk= e routes= gravados no vpnXX.conf (0600)
+# 7. systemd: (re)instala e inicia snx-rs.service (command mode)
+# 8. Dispatcher NM 99-snx-vpn.sh
+# 9. nm-snx-setup.sh (somente dummy-ifaces de SNX; IPsec não passa pelo NM)
+# 10. Userland: vpn, vpn-tray, core/, ícones -> ~/.local/bin
+# 10b. Backend IPsec privilegiado (espelho da seção 11b do install.sh):
+#      core/ + vpn-ipsec-apply -> /usr/lib/vpn-egsys; sudoers restrito
+#      reescrito com validação visudo -c; strongswan-starter habilitado;
+#      vpn-ipsec-apply --user $TARGET_USER aplicado
+# 11. Aliases (bloco marcado >>> vpn-egsys <<<) e PATH
+# 12. Reinício do vpn-tray na sessão gráfica do usuário alvo
 ```
+
+#### Modo argumento
+
+```bash
+./update.sh            # fluxo linear completo (interativo nas credenciais)
+```
+
+> Nota: versões antigas deste doc descreviam um menu TUI (`show_menu`,
+> `add_vpn`, `remove_vpn`...) que não existe no script vigente.
 
 ### 3. `uninstall.sh` - Script de Desinstalação
 
 **Linguagem:** Bash
-**Linhas:** ~53
+**Linhas:** ~40
 **Responsabilidade:** Remoção completa do sistema
 
-#### Processo
+#### Processo (comportamento real do script)
 
-1. Parar processos (vpn-tray, snx-rs)
-2. Remover arquivos instalados
-3. Remover configurações do sudoers
-4. Remover aliases do shell
-5. **Perguntar** antes de remover configs de VPN
+1. Parar processos (vpn-tray; stop+disable `snx-rs.service`)
+2. Remover `snx-rs.service` + dispatcher NM `99-snx-vpn.sh` + lock
+3. Remover conexões NM dummy (RO/PR/AM)
+4. Remover userland: `~/.local/bin/vpn-tray`, ícones, .desktop, autostart e aliases
+   (nota: `vpn` e `core/` em `~/.local/bin` não são removidos)
+5. Preservar credenciais (`~/.config/snx-rs/`) e o binário snx-rs
+
+> **O backend IPsec privilegiado NÃO é removido pelo uninstall.sh** (gap conhecido, registrado no
+> Roadmap Fase 3). Remoção manual:
+> ```bash
+> sudo /usr/lib/vpn-egsys/vpn-ipsec-apply --uninstall   # só os blocos gerenciados
+> sudo rm -f /etc/sudoers.d/vpn-egsys
+> sudo systemctl disable --now strongswan-starter
+> sudo rm -rf /usr/lib/vpn-egsys
+> ```
 
 #### Boas Práticas
 
 - Usar `set -e` para falhar em erros
-- Perguntar confirmação para remover configs
-- Não remover snx-rs (deixar para usuário)
+- Nunca tocar em `~/.config/snx-rs/` sem confirmação explícita (preservado por padrão)
 - Exibir instruções para remoção manual do snx-rs
 
 ### 4. `vpn-tray` - Monitor de Bandeja
 
 **Linguagem:** Python 3
-**Linhas:** ~130
+**Linhas:** ~582
 **Responsabilidade:** Monitoramento e interface gráfica
 
 #### Estrutura da Classe
@@ -333,14 +310,13 @@ class VPNTray:
 
     def on_connect(self, widget, key):
         """Conecta à VPN."""
-        # killall snx-rs
-        # rm -f /run/snx-rs.lock
-        # nohup sudo snx-rs -m standalone -c conf -l info
+        # core.vpn_manager.connect_vpn(id):
+        #  SNX   -> snxctl connect (daemon command mode) + nmcli up <label>
+        #  IPsec -> vpn-ipsec-apply -> ipsec up / swanctl --initiate
 
     def on_disconnect(self, widget):
         """Desconecta VPN."""
-        # killall snx-rs
-        # rm -f /run/snx-rs.lock
+        # core.vpn_manager.disconnect_vpn() (snxctl disconnect / ipsec down)
 
     def on_quit(self, widget):
         """Encerra o aplicativo."""
@@ -528,72 +504,53 @@ ls ~/.config/snx-rs/
 #### Teste de Conexão
 
 ```bash
-# Adicionar VPN de teste
-./update.sh adicionar
-# Nome: vpntest
-# Servidor: 127.0.0.1 (ou servidor válido)
-# Usuário: test
-# Senha: test
+# Registrar VPN de teste (assistente interativo)
+vpn add
 
-# Testar conexão
-vpntest
-vpnstatus
-vpnoff
+# Conectar/desconectar pelo CLI universal
+vpn connect vpntest
+vpn status
+vpn off
 ```
 
-#### Teste de Gerenciador
+#### Teste de Gerenciador / Backend IPsec
 
 ```bash
-# Testar todas as opções do menu
-./update.sh listar
-./update.sh adicionar
-./update.sh atualizar
-./update.sh remover
-./update.sh aliases
-./update.sh tray
+./update.sh                              # fluxo linear de atualização (inclui 10b)
+sudo /usr/lib/vpn-egsys/vpn-ipsec-apply --check      # exit 1 se /etc dessincronizado
+sudo /usr/lib/vpn-egsys/vpn-ipsec-apply              # reaplica blocos gerenciados
+ipsec statusall | grep -E 'vpn.*INSTALLED'           # SA instalada (formato com chaves)
 ```
 
-### Testes Automáticos (Futuro)
+### Testes Automatizados (Vigentes — suíte de 40 testes)
 
-O projeto ainda não tem testes automatizados. Sugestões para implementação:
-
-#### Bash Tests
-
-Usar `bats` (Bash Automated Testing System):
+O Quality Gate do projeto é o runner `./run_tests.sh` (obrigatório antes de qualquer commit):
 
 ```bash
-# Instalar bats
-# Debian: sudo apt install bats
-# Arch: yay -S bats
-# Fedora: sudo dnf install bats
-
-# Criar tests/install.bats
-#!/usr/bin/env bats
-
-@test "Detectar distro" {
-    run ./install.sh
-    # ...
-}
+./run_tests.sh
+# 1. bash -n            — sintaxe de todos os scripts shell
+# 2. python -m py_compile — todos os módulos Python (core, vpn, vpn-tray, helper)
+# 3. python -m unittest discover -s tests — 40 testes (27 unitários + 10 pentest + 3 CLI)
 ```
 
-#### Python Tests
+#### Estrutura da suíte (`tests/`)
 
-Usar `pytest`:
+| Arquivo | Cobertura |
+|---------|-----------|
+| `test_vpn_manager.py` | Parsing/escrita de perfis, sanitização, renderizadores stroke/swanctl (`render_stroke_block`, `render_secrets_block`, `render_swanctl_block`), idempotência de marcadores `BEGIN/END vpn-egsys`, `connect/disconnect_ipsec_linux` com `run_sudo` mockado (apply→up→poll SA `INSTALLED`), parse real do `statusall` (chaves `conn{n}:`), `installed_remote_ts` + `missing_released_routes` (aviso de TS reduzido pelo gateway) |
+| `test_security_pentest.py` | Matriz ACH-VPN-001..010 (injeção de comando/CRLF/path traversal, 0600, varredura de secrets incluindo `vpn-ipsec-apply`, proibição de `shell=True`, payload gigante, CLI, plist) |
+| `test_cli.py` | Parser do `vpn`: aliases de atalho, validação de ID, `list`/`status` |
 
-```python
-# tests/test_vpn_tray.py
-import pytest
-from vpn_tray import discover_vpns, VPNTray
+#### Rodando isoladamente
 
-def test_discover_vpns(tmp_path):
-    # Criar config fake
-    conf = tmp_path / "vpnro.conf"
-    conf.write_text("server-name=127.0.0.1\nuser-name=test\n")
-    
-    # Testar
-    vpns = discover_vpns(str(tmp_path))
-    assert "vpnro" in vpns
+```bash
+python3 -m unittest tests.test_vpn_manager -v
+python3 -m unittest tests.test_security_pentest -v
 ```
+
+> Os testes de backend usam `@patch` em `core.vpn_manager.run_sudo`/`shutil.which` e nunca tocam
+> no sistema real — o túnel AM SSP validado ao vivo em máquina física permanece como
+> evidência complementar (ver `docs/IPSEC.md` §3–4).
 
 ---
 
@@ -737,7 +694,7 @@ cp -r icons vpn-egsys-deb/usr/share/vpn-egsys/
 # Criar arquivo DEBIAN/control
 cat > vpn-egsys-deb/DEBIAN/control <<EOF
 Package: vpn-egsys
-Version: 1.0.0
+Version: 2.2.1
 Section: net
 Priority: optional
 Architecture: amd64
@@ -760,7 +717,7 @@ sudo dnf install rpm-build
 # Criar especificação
 cat > ~/rpmbuild/SPECS/vpn-egsys.spec <<EOF
 Name: vpn-egsys
-Version: 1.0.0
+Version: 2.2.1
 Release: 1%{?dist}
 Summary: VPN Check Point Monitor
 License: MIT

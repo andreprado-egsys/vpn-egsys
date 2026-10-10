@@ -9,6 +9,7 @@ import sys
 import glob
 import signal
 import platform
+import threading
 import subprocess
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -199,10 +200,29 @@ def run_linux_tray():
             return True
 
         def on_connect(self, widget, key):
-            connect_vpn(key)
+            lbl = self.configs.get(key, {}).get('label', key)
+            self.status_item.set_label(f'⌛ Conectando {lbl}...')
+            threading.Thread(target=self._async_connect, args=(key,), daemon=True).start()
+
+        def _async_connect(self, key):
+            ok, msg = connect_vpn(key)
+            GLib.idle_add(self.check_status)
+            try:
+                subprocess.Popen(['notify-send', 'egSYS VPN', msg])
+            except Exception:
+                pass
 
         def on_disconnect(self, widget):
-            disconnect_all()
+            self.status_item.set_label('⌛ Desconectando...')
+            threading.Thread(target=self._async_disconnect, daemon=True).start()
+
+        def _async_disconnect(self):
+            ok, msg = disconnect_all()
+            GLib.idle_add(self.check_status)
+            try:
+                subprocess.Popen(['notify-send', 'egSYS VPN', msg])
+            except Exception:
+                pass
 
         def on_add_direct(self, default_proto='ipsec'):
             """Abre direto o diálogo de adicionar nova VPN com protocolo pré-selecionado."""
