@@ -371,12 +371,14 @@ GLib.timeout_add_seconds(3, check_status)
 
 Desde a v2.2.0 o `/etc/sudoers.d/vpn-egsys` instalado pelo `install.sh`/`update.sh` contém
 **somente** o conjunto restrito do backend IPsec (validado com `visudo -cf` antes de aplicar, 0440
-root:root). Nomes de conexão são sempre sanitizados para começarem com `vpn`, então o glob `vpn*`
-não abre margem de injeção:
+root:root). Os argumentos usam glob puro `*` (e não `vpn*`) porque o `sudo-rs` do Ubuntu 25.10+
+casa curingas com prefixo em argumentos de forma intermitente, quebrando silenciosamente o
+up/down da bandeja; a restrição real vem dos nomes de conexão, sempre sanitizados para
+`vpn[a-z0-9]+` e materializados apenas por root:
 
 ```
 USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply,
-    /usr/bin/ipsec up vpn*, /usr/bin/ipsec down vpn*,
+    /usr/bin/ipsec up *, /usr/bin/ipsec down *,
     /usr/bin/ipsec statusall, /usr/bin/ipsec reload,
     /usr/bin/swanctl --initiate *, /usr/bin/swanctl --terminate *,
     /usr/bin/swanctl --list-sas
@@ -388,8 +390,9 @@ O caminho SNX dispensa sudo: o daemon roda como serviço systemd (`snx-rs.servic
 ainda as possuir, podem ser removidas com `sudo rm /etc/sudoers.d/vpn-egsys && ./update.sh`.
 
 **Riscos residuais:**
-- NOPASSWD para root nos binários strongSwan listados (mitigado pelo glob `vpn*` e pelo escopo
-  fixo do helper: ele só reescreve blocos entre marcadores `# BEGIN/END vpn-egsys (managed)`)
+- NOPASSWD para root nos binários strongSwan listados (mitigado pelo escopo fixo do helper:
+  ele só reescreve blocos entre marcadores `# BEGIN/END vpn-egsys (managed)` e os nomes de
+  conexão são sempre sanitizados para `vpn[a-z0-9]+`)
 
 **Mitigações:**
 - Arquivo com permissões 0440 (root:root)

@@ -398,7 +398,7 @@ IPSEC_BIN="$(command -v ipsec || echo /usr/sbin/ipsec)"
 SWANCTL_BIN="$(command -v swanctl || echo /usr/sbin/swanctl)"
 SUDOERS_TMP="$(mktemp)"
 cat > "$SUDOERS_TMP" <<EOF
-$TARGET_USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply, $IPSEC_BIN up vpn*, $IPSEC_BIN down vpn*, $IPSEC_BIN statusall, $IPSEC_BIN reload, $SWANCTL_BIN --initiate *, $SWANCTL_BIN --terminate *, $SWANCTL_BIN --list-sas
+$TARGET_USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply, $IPSEC_BIN up *, $IPSEC_BIN down *, $IPSEC_BIN statusall, $IPSEC_BIN reload, $SWANCTL_BIN --initiate *, $SWANCTL_BIN --terminate *, $SWANCTL_BIN --list-sas
 EOF
 if sudo visudo -c -q -f "$SUDOERS_TMP" >/dev/null 2>&1; then
     sudo install -m 0440 "$SUDOERS_TMP" /etc/sudoers.d/vpn-egsys

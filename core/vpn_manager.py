@@ -217,12 +217,14 @@ def render_stroke_block(profiles: Dict[str, Dict[str, Any]]) -> str:
         esp = sanitize_config_value(data.get('esp', '')) or DEFAULT_ESP_PROPOSALS
         if not server:
             continue
+        aggressive = 'yes' if str(data.get('aggressive', 'no')).lower() == 'yes' else 'no'
+        forceencaps = 'no' if str(data.get('forceencaps', 'yes')).lower() == 'no' else 'yes'
         rendered += 1
         lines.extend([
             f"conn {vpn_id}",
             "    auto=add",
             "    keyexchange=ikev1",
-            "    aggressive=no",
+            f"    aggressive={aggressive}",
             "    authby=psk",
             f"    ike={ike}",
             f"    esp={esp}",
@@ -236,7 +238,7 @@ def render_stroke_block(profiles: Dict[str, Dict[str, Any]]) -> str:
             "    rightauth=psk",
             "    rightid=%any",
             f"    rightsubnet={routes}",
-            "    forceencaps=yes",
+            f"    forceencaps={forceencaps}",
             "",
         ])
     if not rendered:
@@ -487,7 +489,7 @@ class VPNBackend:
 
     @staticmethod
     def disconnect_ipsec_linux(conf: Dict[str, Any]) -> Tuple[bool, str]:
-        """Desconecta túnel IPsec no Linux (stroke e swanctl, best-effort)."""
+        """Desconecta túnel IPsec no Linux (stroke e swanctl, com verificação)."""
         label = conf.get('label', '')
         name = conf.get('id', '')
         if not name:
@@ -497,6 +499,9 @@ class VPNBackend:
             run_sudo(['swanctl', '--terminate', '--ike', name], timeout=15, capture=True)
         if shutil.which('ipsec'):
             run_sudo(['ipsec', 'down', name], timeout=15, capture=True)
+        if VPNBackend.is_ipsec_active_linux(conf):
+            return False, (f"FALHOU ao desconectar {label or name}: a SA continua ativa "
+                           "(verifique sudo NOPASSWD de 'ipsec down').")
         return True, f"Túnel IPsec {label or name} desconectado."
 
     @staticmethod
@@ -678,14 +683,21 @@ def disconnect_all() -> Tuple[bool, str]:
     msg_parts.append(msg_snx)
 
     # 2. Desconecta IPsec de acordo com o SO
+    ok_ipsec = True
     for vpn_id, conf in configs.items():
         if conf.get('protocol') == 'ipsec':
             if is_macos():
-                VPNBackend.disconnect_ipsec_macos(conf)
+                ok_i, msg_i = VPNBackend.disconnect_ipsec_macos(conf)
             elif is_linux():
-                VPNBackend.disconnect_ipsec_linux(conf)
+                ok_i, msg_i = VPNBackend.disconnect_ipsec_linux(conf)
+            else:
+                continue
+            if not ok_i:
+                ok_ipsec = False
+                msg_parts.append(msg_i)
 
-    return True, "Sessões VPN desconectadas."
+    msg = "Sessões VPN desconectadas." if ok_ipsec else " ".join(msg_parts)
+    return ok_ipsec, msg
 
 
 def get_active_vpn() -> Optional[Dict[str, Any]]:

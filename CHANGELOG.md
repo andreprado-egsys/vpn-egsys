@@ -4,6 +4,19 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.2.3] - 2026-10-13
+
+### Corrigido
+- **sudoers compatível com `sudo-rs` (Ubuntu 25.10+)** — regras `ipsec up/down vpn*` trocadas
+  por glob puro `up *`/`down *`: o `sudo-rs` casa curingas com prefixo em argumentos de forma
+  intermitente, fazendo o up/down da bandeja exigir senha e falhar em silêncio.
+- **`disconnect_ipsec_linux` valida a SA após o `ipsec down`** — reporta falha real
+  ("SA continua ativa") em vez de sucesso falso; `disconnect_all` propaga o erro à bandeja.
+- **`render_stroke_block` respeita os campos do perfil** — `aggressive` e `forceencaps`
+  de `vpn*.conf` agora são materializados em `/etc/ipsec.conf` (antes havia valor fixo).
+- **`vpn-ipsec-apply` tolera strongSwan ausente** — sem o binário `ipsec` o helper grava os
+  perfis, emite aviso e sai 0, sem traceback (`FileNotFoundError` no reload).
+
 ## [2.2.2] - 2026-10-10
 
 ### Adicionado

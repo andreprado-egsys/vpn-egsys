@@ -212,14 +212,17 @@ Cria o arquivo `/etc/sudoers.d/vpn-egsys` com permissões NOPASSWD para os coman
 **Conteúdo (v2.2.x — somente backend IPsec; o SNX não precisa de sudo: daemon systemd + SUID):**
 ```
 USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply,
-    /usr/bin/ipsec up vpn*, /usr/bin/ipsec down vpn*,
+    /usr/bin/ipsec up *, /usr/bin/ipsec down *,
     /usr/bin/ipsec statusall, /usr/bin/ipsec reload,
     /usr/bin/swanctl --initiate *, /usr/bin/swanctl --terminate *,
     /usr/bin/swanctl --list-sas
 ```
 
-O glob `vpn*` é seguro porque o `write_vpn_config` sanitiza todo nome de conexão para
-`vpn[a-z0-9]+` — impossível apontar para conns de terceiros.
+O glob puro `*` nos argumentos é intencional: o `sudo-rs` (Ubuntu 25.10+) casa de forma
+intermitente curingas com prefixo (ex.: `vpn*`) em argumentos, quebrando a bandeja em
+silêncio. A restrição real permanece: os nomes de conexão só existem porque
+`write_vpn_config` os sanitiza para `vpn[a-z0-9]+` e apenas root os materializa em
+`/etc/ipsec.conf` — um `up/down` de conn inexistente não tem efeito.
 
 **Processo:**
 1. Detecta caminho real de `ipsec`/`swanctl` (`command -v`)
@@ -623,7 +626,7 @@ rm -rf snx-rs-v6.0.6-x86_64-unknown-linux-gnu* snx-rs
 ```bash
 # Criar arquivo (substitua $USER pelo usuário analista)
 cat <<EOF | sudo tee /etc/sudoers.d/vpn-egsys > /dev/null
-$USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply, /usr/bin/ipsec up vpn*, /usr/bin/ipsec down vpn*, /usr/bin/ipsec statusall, /usr/bin/ipsec reload, /usr/bin/swanctl --initiate *, /usr/bin/swanctl --terminate *, /usr/bin/swanctl --list-sas
+$USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply, /usr/bin/ipsec up *, /usr/bin/ipsec down *, /usr/bin/ipsec statusall, /usr/bin/ipsec reload, /usr/bin/swanctl --initiate *, /usr/bin/swanctl --terminate *, /usr/bin/swanctl --list-sas
 EOF
 
 # Ajustar permissões

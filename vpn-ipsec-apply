@@ -16,6 +16,7 @@ Execução de comandos sempre via argv list (política de pentest do projeto).
 
 import os
 import pwd
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -204,8 +205,13 @@ def main(argv) -> int:
         apply_changes(diff)
     ensure_stroke_conf()
     if not uninstall and profiles:
-        ensure_daemon()
-        subprocess.run(['ipsec', 'reload'], check=False)
+        if shutil.which('ipsec'):
+            ensure_daemon()
+            subprocess.run(['ipsec', 'reload'], check=False)
+        else:
+            print("aviso: strongSwan (ipsec) não instalado; "
+                  "perfis gravados, recarregamento do daemon pulado",
+                  file=sys.stderr)
     if diff:
         print("aplicado" if not uninstall else "blocos gerenciados removidos")
     else:
