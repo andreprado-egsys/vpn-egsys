@@ -11,6 +11,7 @@ import signal
 import platform
 import threading
 import subprocess
+import time
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
@@ -45,6 +46,14 @@ if IS_MACOS:
 # -------------------------------------------------------------
 def run_linux_tray():
     import pwd
+
+    try:
+        import resource
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if soft < 8192:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (min(8192, hard), hard))
+    except Exception:
+        pass
 
     def setup_display():
         uid = os.getuid()
@@ -108,8 +117,12 @@ def run_linux_tray():
             self.indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
             self.indicator.set_title('VPN Desconectada')
             self.build_menu()
-            GLib.timeout_add_seconds(3, self.check_status)
-            self.check_status()
+            # One long-lived poller thread instead of a new Thread every 3s:
+            # short-lived threads keep dead subprocess frames (pipe fds) alive
+            # until the cyclic GC runs, which eventually exhausts RLIMIT_NOFILE
+            # and freezes the AppIndicator D-Bus menu ("Too many open files").
+            self._poll_running = True
+            threading.Thread(target=self._status_loop, daemon=True).start()
 
         def build_menu(self):
             menu = Gtk.Menu()
@@ -186,7 +199,25 @@ def run_linux_tray():
             self.indicator.set_menu(menu)
 
         def check_status(self):
+            # chamado pós-conectar/desconectar: o poller dedicado já cuida da UI;
+            # uma verificação imediata em thread mantém o main loop livre.
+            threading.Thread(target=self._async_status, daemon=True).start()
+            return True
+
+        def _status_loop(self):
+            while getattr(self, '_poll_running', True):
+                try:
+                    active = get_active_vpn()
+                    GLib.idle_add(self._apply_status, active)
+                except Exception:
+                    pass
+                time.sleep(5)
+
+        def _async_status(self):
             active = get_active_vpn()
+            GLib.idle_add(self._apply_status, active)
+
+        def _apply_status(self, active):
             if active:
                 label = active.get('label', 'VPN Conectada')
                 proto = active.get('protocol', 'snx').upper()
@@ -197,7 +228,7 @@ def run_linux_tray():
                 self.indicator.set_icon_full(icon_disconnected, 'Desconectado')
                 self.indicator.set_title('VPN Desconectada')
                 self.status_item.set_label('✗ Desconectado')
-            return True
+            return False
 
         def on_connect(self, widget, key):
             lbl = self.configs.get(key, {}).get('label', key)
@@ -256,7 +287,12 @@ def run_linux_tray():
                 row.pack_start(lbl_widget, True, True, 0)
 
                 btn_conn = Gtk.Button(label="Conectar")
-                btn_conn.connect('clicked', lambda w, k=key: (connect_vpn(k), dialog.destroy()))
+
+                def _dlg_connect(w, k=key):
+                    dialog.destroy()
+                    threading.Thread(target=self._async_connect, args=(k,), daemon=True).start()
+
+                btn_conn.connect('clicked', _dlg_connect)
                 row.pack_end(btn_conn, False, False, 0)
 
                 btn_edit = Gtk.Button(label="Editar")
@@ -509,6 +545,7 @@ def run_linux_tray():
             self.show_management_dialog()
 
         def on_quit(self, widget):
+            self._poll_running = False
             Gtk.main_quit()
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)

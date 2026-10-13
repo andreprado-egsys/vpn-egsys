@@ -9,6 +9,13 @@ Gerenciador universal de VPNs, monitor de bandeja (`vpn-tray`), utilitário de t
 - **Verificação de rotas liberadas (v2.2.1)**: compara os traffic selectors instalados com o campo
   `routes` do perfil e avisa explicitamente quando o gateway reduz o túnel e não libera a rede interna.
 - **Bandeja Assíncrona Não-Bloqueante (v2.2.2)**: o `vpn-tray` conecta e desconecta em background (`threading.Thread`), exibindo status `⌛ Conectando...` imediato e emitindo notificações via `notify-send`, sem congelar a interface gráfica durante timeouts ou desafios XAuth do FortiGate.
+- **Hardening de Conformidade sudo-rs e Verificação de Desconexão (v2.2.3)**: `disconnect` valida a SA `INSTALLED` após o `ipsec down`, `render_stroke_block`
+  respeita `aggressive`/`forceencaps` do perfil e o helper tolera strongSwan ausente sem traceback.
+- **Wrapper `vpn-ipsec-ctl` e Bandeja Estável (v2.2.4)**: sudoers NOPASSWD com **apenas dois caminhos
+  exatos** (apply + ctl, sem curingas — o `sudo-rs` do Ubuntu 25.10+ não casa nenhum coringa de
+  argumento), `rereadsecrets`/`reload` automáticos após aplicar perfis, stroke renderizado no modelo
+  byte-a-byte do padrão do gateway (`config setup`/`charondebug` + DPD) e `vpn-tray` com poller único
+  de threads (ícone do painel nunca mais congela; `GetLayout` 7,9s → 0,002s).
 - **Presets Estaduais Rápidos na Bandeja (`vpn-tray`)**: Configuração em um clique para Santa Catarina (SC), Tocantins (TO), Rondônia (RO), Paraná (PR) e Amazonas (AM).
 - **Interface Reativa Multi-Protocolo**: Alternância automática de visibilidade para campos de IPsec (Chave PSK e Rotas customizadas).
 - **Hardening Multi-Usuário (`SUDO_USER`)**: Execuções com `sudo` isolam o home do usuário real e inicializam a bandeja na sessão gráfica correta (sem rodar como root).
@@ -48,7 +55,7 @@ O instalador:
 6. Instala VPN Tray com autostart
 7. No GNOME: instala extensão AppIndicator
 8. Provisiona o backend IPsec privilegiado (helper `/usr/lib/vpn-egsys/vpn-ipsec-apply`,
-   sudoers NOPASSWD restrito a `vpn*`, `strongswan-starter` e apply dos blocos em `/etc`)
+   sudoers NOPASSWD com caminhos exatos (`vpn-ipsec-apply` + `vpn-ipsec-ctl`), `strongswan-starter` e apply dos blocos em `/etc`)
 
 ## Atualização (PCs com versão anterior)
 
@@ -60,7 +67,7 @@ git pull
 
 O `update.sh` migra automaticamente da arquitetura antiga (standalone) para a nova (command mode)
 e também provisiona o backend IPsec privilegiado (helper `/usr/lib/vpn-egsys/vpn-ipsec-apply`,
-sudoers NOPASSWD restrito a `vpn*` e `strongswan-starter`) — em máquinas já instaladas,
+sudoers NOPASSWD com caminhos exatos (`vpn-ipsec-apply` + `vpn-ipsec-ctl`) e `strongswan-starter`) — em máquinas já instaladas,
 `git pull && ./update.sh` cobre 100% do cliente.
 
 ## Uso

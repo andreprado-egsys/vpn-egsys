@@ -73,7 +73,8 @@ esp=aes256-sha256-modp1536,aes128-sha256-modp1536!   # opcional
 | `psk` | Não | PSK do gateway em Base64 (obrigatória na prática p/ FortiGate) |
 | `routes` | Não | `rightsubnet`/`remote_ts` (padrão `0.0.0.0/0`) |
 | `ike` / `esp` | Não | Proposals stroke/swanctl; vazio usa os defaults acima |
-
+| `aggressive` | Não | `no` (**padrão**, Main Mode) ou `yes` (Aggressive Mode) — materializado desde a v2.2.3 |
+| `forceencaps` | Não | `yes` (**padrão**) ou `no` — materializado desde a v2.2.3 |
 ---
 
 ## 3. Comandos de Uso
@@ -101,6 +102,77 @@ sudo /usr/lib/vpn-egsys/vpn-ipsec-apply --check    # exit 1 se desincronizado
 sudo /usr/lib/vpn-egsys/vpn-ipsec-apply            # aplica blocos + reload
 sudo /usr/lib/vpn-egsys/vpn-ipsec-apply --uninstall # remove só os blocos gerenciados
 ```
+
+> ℹ️ Desde a v2.2.3 o helper **tolera strongSwan ausente**: sem o binário `ipsec` ele grava os
+> perfis, emite aviso e sai 0 (sem traceback). Desde a v2.2.4 ele também executa
+> **`ipsec rereadsecrets` + `ipsec reload`** após gravar os blocos — o cache de segredos do charon
+> é invalidado na hora, eliminando o erro "no XAuth password found" no primeiro `up` após
+> gravar/rotacionar um PSK ou senha XAuth.
+
+### Conformidade sudo-rs e wrapper `vpn-ipsec-ctl` (v2.2.4)
+
+Teste de isolamento no `sudo-rs` 0.2.8 (Ubuntu 25.10+) provou que ele **não casa nenhum coringa em
+argumentos** em regras NOPASSWD — nem `down vpn*`, nem o "glob puro" `down *` da v2.2.3 (`sudo-rs:
+interactive authentication is required`). Desde a v2.2.4 o up/down/status passa pelo wrapper
+privilegiado `/usr/lib/vpn-egsys/vpn-ipsec-ctl`, e o sudoers contém **apenas dois caminhos exatos**:
+
+```
+USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply, /usr/lib/vpn-egsys/vpn-ipsec-ctl
+```
+
+O ctl recebe `stroke|swanctl` + `up|down|status [CONEXAO]`, valida o nome contra
+`^vpn[a-z0-9_-]{2,40}$` e traduz para o argv exato do strongSwan (timeouts: up 40s, down 15s,
+status 10s). A restrição efetiva é tripla: sanitização do nome no `write_vpn_config`, materialização
+apenas por root em `/etc/ipsec.conf` e validação dentro do próprio ctl. O core (`ipsec_cli()`) cai
+para as chamadas brutas `ipsec`/`swanctl` apenas em máquinas sem o ctl instalado (sudo interativo).
+O `disconnect_ipsec_linux` continua **re-checando a SA** após o down e reportando falha explícita
+("SA continua ativa") em vez de sucesso falso.
+
+### Bloco gerado em `/etc/ipsec.conf` (modelo vigente desde v2.2.4)
+
+O `render_stroke_block` materializa exatamente o padrão do modelo fornecido pelo time do gateway
+(cabeçalho `config setup`, agrupamentos separados por linha em branco e DPD persistente):
+
+```
+# BEGIN vpn-egsys (managed)
+config setup
+    charondebug="ike 1, knl 1, cfg 1, esp 0"
+
+conn vpnamssp
+    auto=add
+    keyexchange=ikev1
+    aggressive=no
+    authby=psk
+
+    ike=aes256-sha256-modp2048,aes128-sha256-modp1536!
+    esp=aes256-sha256-modp1536,aes128-sha256-modp1536!
+
+    ikelifetime=86400s
+    lifetime=43200s
+    dpdaction=restart
+    dpddelay=30s
+    dpdtimeout=120s
+
+    left=%defaultroute
+    leftauth=psk
+    leftauth2=xauth
+    leftid=%any
+    xauth_identity=<CPF>
+    leftsourceip=%config
+
+    right=<IP do gateway>
+    rightauth=psk
+    rightid=%any
+    rightsubnet=<routes do perfil>
+
+    forceencaps=yes
+
+# END vpn-egsys (managed)
+```
+
+As aspas em `/etc/ipsec.secrets` (`: PSK "..."` / `CPF : XAUTH "..."`) são opcionais na sintaxe
+stroke — o gerado com aspas é byte-equivalente em parse ao modelo sem aspas e protege valores com
+caracteres especiais.
 
 ## 4. Confirmação de rotas liberadas pelo gateway
 

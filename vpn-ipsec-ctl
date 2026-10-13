@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""
+vpn-ipsec-ctl - wrapper privilegiado de up/down/status do vpn-egsys.
+
+Motivação: o sudo-rs 0.2.8 (padrão do Ubuntu 25.10+) NÃO casa wildcards em
+argumentos de comando ('ipsec down *' nunca casa, mesmo como regra única),
+então qualquer regra NOPASSWD com glob é inerte nesse sistema. Com este
+wrapper o /etc/sudoers.d/vpn-egsys lista apenas caminhos exatos, sem glob,
+e a validação do nome de conexão (vpn + [a-z0-9_-]) acontece aqui, como root.
+
+Uso: sudo vpn-ipsec-ctl <stroke|swanctl> <up|down|status> [CONEXAO]
+Execução sempre via argv list (política de pentest do projeto).
+"""
+
+import re
+import subprocess
+import sys
+
+NAME_RE = re.compile(r'^vpn[a-z0-9_-]{2,40}$')
+
+
+def run(argv, timeout):
+    return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+
+
+def main(argv) -> int:
+    if len(argv) not in (2, 3):
+        print("uso: vpn-ipsec-ctl <stroke|swanctl> <up|down|status> [CONEXAO]",
+              file=sys.stderr)
+        return 2
+
+    backend, action = argv[0], argv[1]
+    name = argv[2] if len(argv) == 3 else None
+
+    if backend not in ('stroke', 'swanctl'):
+        print(f"erro: backend inválido '{backend}'", file=sys.stderr)
+        return 2
+    if backend == 'stroke':
+        if action == 'status':
+            cmd, timeout = ['ipsec', 'statusall'], 10
+        elif action in ('up', 'down'):
+            if not name or not NAME_RE.match(name):
+                print(f"erro: nome de conexão inválido '{name}'", file=sys.stderr)
+                return 2
+            cmd, timeout = ['ipsec', action, name], (40 if action == 'up' else 15)
+        else:
+            print(f"erro: ação inválida '{action}'", file=sys.stderr)
+            return 2
+    else:  # swanctl
+        if action == 'status':
+            cmd, timeout = ['swanctl', '--list-sas'], 10
+        elif action == 'up':
+            if not name or not NAME_RE.match(name):
+                print(f"erro: nome de conexão inválido '{name}'", file=sys.stderr)
+                return 2
+            cmd, timeout = ['swanctl', '--initiate', '--ike', name], 40
+        elif action == 'down':
+            if not name or not NAME_RE.match(name):
+                print(f"erro: nome de conexão inválido '{name}'", file=sys.stderr)
+                return 2
+            cmd, timeout = ['swanctl', '--terminate', '--ike', name], 15
+        else:
+            print(f"erro: ação inválida '{action}'", file=sys.stderr)
+            return 2
+
+    try:
+        res = run(cmd, timeout)
+    except FileNotFoundError:
+        print(f"erro: binário '{cmd[0]}' não instalado", file=sys.stderr)
+        return 127
+    except subprocess.TimeoutExpired:
+        print(f"erro: timeout após {timeout}s em {' '.join(cmd)}", file=sys.stderr)
+        return 1
+
+    sys.stdout.write(res.stdout)
+    sys.stderr.write(res.stderr)
+    return res.returncode
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

@@ -25,8 +25,12 @@ Este documento consolida a arquitetura de segurança, matriz de mitigação cont
   segredos apenas de `~/.config/snx-rs/*.conf` 0600 decodificados em runtime).
 - **Injeção em blocos stroke**: `escape_stroke_value()` neutraliza `"` , `\` e controles (`\r\n`)
   antes de qualquer interpolação em `/etc/ipsec.conf`/`ipsec.secrets`; nomes de conexão são
-  restritos ao padrão `vpn[a-z0-9]*` pelo `write_vpn_config`, o que também garante que o
-  NOPASSWD do sudoers (`ipsec up vpn*`) nunca possa ser usado para conns de terceiros.
+  restritos ao padrão `vpn[a-z0-9]*` pelo `write_vpn_config`. Desde a v2.2.4 o up/down/status
+  passa pelo wrapper privilegiado `vpn-ipsec-ctl`, que **revalida** o nome (`^vpn[a-z0-9_-]{2,40}$`)
+  e traduz para argv fixo do strongSwan; o sudoers NOPASSWD contém apenas dois caminhos exatos
+  (apply + ctl) **sem nenhum curinga** — decisão forçada pelo `sudo-rs` 0.2.8 (Ubuntu 25.10+), que
+  não casa coringas de argumento em regra NOPASSWD, e a restrição efetiva permanece sendo o nome
+  sanitizado + materialização apenas por root em `/etc/ipsec.conf`.
 
 ---
 

@@ -388,21 +388,23 @@ cp -r "$SCRIPT_DIR/core" "$LOCAL_BIN/"
 cp "$SCRIPT_DIR/icons/"*.svg "$ICON_DIR/"
 info "vpn-tray, CLI universal 'vpn' e ícones instalados."
 
-# --- 11b. Backend IPsec: helper root, sudoers e strongswan-starter ---
-warn "Provisionando backend IPsec (strongSwan stroke + helper vpn-ipsec-apply)..."
+# --- 11b. Backend IPsec: helpers root, sudoers e strongswan-starter ---
+warn "Provisionando backend IPsec (strongSwan stroke + helpers vpn-ipsec-apply/ctl)..."
 sudo mkdir -p /usr/lib/vpn-egsys
 sudo cp -r "$SCRIPT_DIR/core" /usr/lib/vpn-egsys/
 sudo install -m 0755 "$SCRIPT_DIR/vpn-ipsec-apply" /usr/lib/vpn-egsys/vpn-ipsec-apply
+sudo install -m 0755 "$SCRIPT_DIR/vpn-ipsec-ctl" /usr/lib/vpn-egsys/vpn-ipsec-ctl
 
-IPSEC_BIN="$(command -v ipsec || echo /usr/sbin/ipsec)"
-SWANCTL_BIN="$(command -v swanctl || echo /usr/sbin/swanctl)"
+# Sudoers APENAS com caminhos exatos: o sudo-rs 0.2.8 (Ubuntu 25.10+) não casa
+# wildcards em argumentos ('ipsec down *' nunca casa), então up/down/status rodam
+# pelo wrapper vpn-ipsec-ctl, que valida o nome vpn[a-z0-9_-] já como root.
 SUDOERS_TMP="$(mktemp)"
 cat > "$SUDOERS_TMP" <<EOF
-$TARGET_USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply, $IPSEC_BIN up *, $IPSEC_BIN down *, $IPSEC_BIN statusall, $IPSEC_BIN reload, $SWANCTL_BIN --initiate *, $SWANCTL_BIN --terminate *, $SWANCTL_BIN --list-sas
+$TARGET_USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply, /usr/lib/vpn-egsys/vpn-ipsec-ctl
 EOF
 if sudo visudo -c -q -f "$SUDOERS_TMP" >/dev/null 2>&1; then
     sudo install -m 0440 "$SUDOERS_TMP" /etc/sudoers.d/vpn-egsys
-    info "sudoers /etc/sudoers.d/vpn-egsys instalado (NOPASSWD restrito a vpn*)."
+    info "sudoers /etc/sudoers.d/vpn-egsys instalado (NOPASSWD só caminhos exatos, via vpn-ipsec-ctl)."
 else
     warn "sudoers gerado é inválido — NÃO instalado; conexões IPsec pedirão senha sudo."
 fi

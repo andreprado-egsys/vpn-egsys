@@ -4,7 +4,48 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.2.4] - 2026-10-13
+
+### Adicionado
+- **Wrapper privilegiado `vpn-ipsec-ctl`** (`/usr/lib/vpn-egsys/vpn-ipsec-ctl`) — único ponto
+  de entrada root para up/down/status (stroke e swanctl), com validação estrita de nome de conn
+  (`^vpn[a-z0-9_-]{2,40}$`) e timeouts por operação (up 40s, down 15s, status 10s). O sudoers
+  passou a conter **apenas dois caminhos exatos** (apply + ctl), sem nenhum curinga.
+- **`ipsec_cli()` no core** — todas as ações IPsec do `vpn`, da bandeja e do helper agora roteiam
+  pelo ctl quando instalado, com fallback retrocompatível às chamadas brutas `ipsec`/`swanctl`.
+- **`vpn-ipsec-apply` executa `ipsec rereadsecrets` + `ipsec reload`** após gravar os blocos —
+  elimina o erro "no XAuth password found" causado pelo cache de segredos do charon.
+- **Renderer stroke no modelo byte-a-byte do padrão do gateway** — cabeçalho
+  `config setup` + `charondebug="ike 1, knl 1, cfg 1, esp 0"` e agrupamentos com linha em branco
+  (authby / proposals / tempos / left / right / forceencaps).
+- **Bloco DPD persistente em todos os conns IKEv1** — `ikelifetime=86400s`, `lifetime=43200s`,
+  `dpdaction=restart`, `dpddelay=30s`, `dpdtimeout=120s`.
+- **Endurecimento do `vpn-tray`** — um único thread poller de longa duração (5s) no lugar do
+  `GLib.timeout_add` síncrono, elevação de `RLIMIT_NOFILE` para 8192 e conexão assíncrona no
+  diálogo de gerenciamento.
+
+### Corrigido
+- **Congelamento do ícone no painel GNOME** — o poll síncrono de status bloqueava o laço Gtk e o
+  `GetLayout` do dbusmenu ultrapassava o timeout do painel (medição real: 7,89s → 0,002s após a
+  correção; ícone voltava a responder a cliques normalmente).
+- **Exaustão de file descriptors/threads após cliques** (526 threads / 1076 fds) — pipes de
+  subprocess fechados só por GC cíclico no Python 3.13 com poller recriado a cada ciclo; o poller
+  único e o limite elevado eliminaram o churn (estado estável medido: 5 threads / 15 fds).
+- **sudo-rs 0.2.8 não casa curingas de argumento — nunca** — teste de isolamento com regra única
+  provou que o desenho "glob puro" da v2.2.3 falha em `sudo-rs` (mensagem "interactive
+  authentication is required"), tornando o ctl + sudoers exato a única forma NOPASSWD viável no
+  Ubuntu 25.10+. Documentação das versões anteriores corrigida para refletir o desenho vigente.
+
+### Validado
+- Quality Gate 41/41 (novo teste de fallback sem ctl; golden do renderer com config setup + DPD).
+- Ciclo completo via clique D-Bus no `vpn-tray` em 2 hosts reais: Conectar → SA `INSTALLED`
+  (ESP in UDP, XAuth aprovado), Desconectar → `0 up`, labels do menu alternando corretamente.
+
 ## [2.2.3] - 2026-10-13
+
+> ⚠️ *Preterido pela v2.2.4:* o sudoers "glob puro" desta versão não funciona no `sudo-rs`
+> 0.2.8 (ele não casa nenhum coringa de argumento); o desenho vigente é o wrapper `vpn-ipsec-ctl`
+> com caminhos exatos.
 
 ### Corrigido
 - **sudoers compatível com `sudo-rs` (Ubuntu 25.10+)** — regras `ipsec up/down vpn*` trocadas

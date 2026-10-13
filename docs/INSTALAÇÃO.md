@@ -209,27 +209,26 @@ snx-rs --version
 
 Cria o arquivo `/etc/sudoers.d/vpn-egsys` com permissões NOPASSWD para os comandos necessários.
 
-**Conteúdo (v2.2.x — somente backend IPsec; o SNX não precisa de sudo: daemon systemd + SUID):**
+**Conteúdo (v2.2.4 — somente backend IPsec; o SNX não precisa de sudo: daemon systemd + SUID):**
 ```
-USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply,
-    /usr/bin/ipsec up *, /usr/bin/ipsec down *,
-    /usr/bin/ipsec statusall, /usr/bin/ipsec reload,
-    /usr/bin/swanctl --initiate *, /usr/bin/swanctl --terminate *,
-    /usr/bin/swanctl --list-sas
+USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply, /usr/lib/vpn-egsys/vpn-ipsec-ctl
 ```
 
-O glob puro `*` nos argumentos é intencional: o `sudo-rs` (Ubuntu 25.10+) casa de forma
-intermitente curingas com prefixo (ex.: `vpn*`) em argumentos, quebrando a bandeja em
-silêncio. A restrição real permanece: os nomes de conexão só existem porque
-`write_vpn_config` os sanitiza para `vpn[a-z0-9]+` e apenas root os materializa em
-`/etc/ipsec.conf` — um `up/down` de conn inexistente não tem efeito.
+Dois caminhos exatos, **sem nenhum curinga**: o `sudo-rs` 0.2.8 (Ubuntu 25.10+) não casa coringas de
+argumento em regras NOPASSWD — nem `vpn*`, nem o "glob puro" `*` tentado na v2.2.3 (comprovado por
+teste de isolamento com regra única). Toda a flexibilidade (stroke/swanctl, up/down/status, nome de
+conn) vive dentro do `vpn-ipsec-ctl`, que valida o nome (`^vpn[a-z0-9_-]{2,40}$`) e executa argv
+fixo. A restrição real permanece: os nomes de conexão só existem porque `write_vpn_config` os
+sanitiza para `vpn[a-z0-9]+` e apenas root os materializa em `/etc/ipsec.conf`.
 
 **Processo:**
-1. Detecta caminho real de `ipsec`/`swanctl` (`command -v`)
-2. Cria regras com NOPASSWD
+1. Instala `vpn-ipsec-apply` e `vpn-ipsec-ctl` em `/usr/lib/vpn-egsys` (root:root, 0755) com o `core/`
+2. Cria as duas regras NOPASSWD de caminho exato
 3. Valida sintaxe com `sudo visudo -cf` **antes** de instalar
 4. Aplica permissões 0440 (root:root)
 5. Se validação falhar, NÃO instala (fallback: senha sudo interativa)
+6. Roda `vpn-ipsec-apply --user $TARGET_USER`, que grava os blocos em `/etc` e executa
+   `ipsec rereadsecrets` + `ipsec reload` (invalida o cache de segredos do charon — v2.2.4)
 
 **Localização:** `/etc/sudoers.d/vpn-egsys`
 **Permissões:** `0440` (somente leitura para root e grupo root)

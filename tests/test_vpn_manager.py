@@ -156,24 +156,35 @@ class TestIpsecRenderers(unittest.TestCase):
         block = render_stroke_block({'vpnamssp': AM_V1_PROFILE})
         self.assertTrue(block.startswith(MARK_BEGIN))
         self.assertTrue(block.rstrip().endswith(MARK_END))
+        self.assertIn('config setup\n    charondebug="ike 1, knl 1, cfg 1, esp 0"\n', block)
         expected_conn = (
             "conn vpnamssp\n"
             "    auto=add\n"
             "    keyexchange=ikev1\n"
             "    aggressive=no\n"
             "    authby=psk\n"
+            "\n"
             "    ike=aes256-sha256-modp2048,aes128-sha256-modp1536!\n"
             "    esp=aes256-sha256-modp1536,aes128-sha256-modp1536!\n"
+            "\n"
+            "    ikelifetime=86400s\n"
+            "    lifetime=43200s\n"
+            "    dpdaction=restart\n"
+            "    dpddelay=30s\n"
+            "    dpdtimeout=120s\n"
+            "\n"
             "    left=%defaultroute\n"
             "    leftauth=psk\n"
             "    leftauth2=xauth\n"
             "    leftid=%any\n"
             "    xauth_identity=99999999999\n"
             "    leftsourceip=%config\n"
+            "\n"
             "    right=192.0.2.1\n"
             "    rightauth=psk\n"
             "    rightid=%any\n"
             "    rightsubnet=172.20.100.0/24\n"
+            "\n"
             "    forceencaps=yes\n"
         )
         self.assertIn(expected_conn, block)
@@ -296,7 +307,7 @@ class TestIpsecBackendLinux(unittest.TestCase):
         self.assertNotIn("NÃO liberou", msg)
         cmds = [c.args[0] for c in mock_run.call_args_list]
         self.assertIn(['/usr/lib/vpn-egsys/vpn-ipsec-apply'], cmds)
-        self.assertIn(['ipsec', 'up', 'vpnamssp'], cmds)
+        self.assertIn(['/usr/lib/vpn-egsys/vpn-ipsec-ctl', 'stroke', 'up', 'vpnamssp'], cmds)
 
     @patch("core.vpn_manager.run_sudo")
     @patch("core.vpn_manager.os.path.exists")
@@ -349,7 +360,7 @@ class TestIpsecBackendLinux(unittest.TestCase):
         ok, msg = VPNBackend.connect_ipsec_linux(conf)
         self.assertTrue(ok)
         self.assertIn("IKEv2/swanctl", msg)
-        mock_run.assert_any_call(['swanctl', '--initiate', '--ike', 'vpnsc'], timeout=40)
+        mock_run.assert_any_call(['/usr/lib/vpn-egsys/vpn-ipsec-ctl', 'swanctl', 'up', 'vpnsc'], timeout=40)
 
     @patch("core.vpn_manager.run_sudo")
     @patch("core.vpn_manager.os.path.exists")
@@ -368,12 +379,24 @@ class TestIpsecBackendLinux(unittest.TestCase):
         self.assertIn("install.sh", msg)
 
     @patch("core.vpn_manager.run_sudo")
-    def test_disconnect_v1_downs_stroke(self, mock_run):
+    @patch("core.vpn_manager.os.path.exists")
+    def test_disconnect_v1_downs_stroke(self, mock_exists, mock_run):
+        mock_exists.return_value = True
         mock_run.return_value = MagicMock(returncode=0, stdout='', stderr='')
         with patch("core.vpn_manager.shutil.which", return_value='/usr/bin/ipsec'):
             ok, msg = VPNBackend.disconnect_ipsec_linux(self._conf())
         self.assertTrue(ok)
-        mock_run.assert_any_call(['ipsec', 'down', 'vpnamssp'], timeout=15, capture=True)
+        mock_run.assert_any_call(['/usr/lib/vpn-egsys/vpn-ipsec-ctl', 'stroke', 'down', 'vpnamssp'],
+                                 timeout=15)
+
+    @patch("core.vpn_manager.run_sudo")
+    @patch("core.vpn_manager.os.path.exists", return_value=False)
+    def test_disconnect_falls_back_to_raw_ipsec_without_ctl(self, mock_exists, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout='', stderr='')
+        with patch("core.vpn_manager.shutil.which", return_value='/usr/bin/ipsec'):
+            ok, msg = VPNBackend.disconnect_ipsec_linux(self._conf())
+        self.assertTrue(ok)
+        mock_run.assert_any_call(['ipsec', 'down', 'vpnamssp'], timeout=15)
 
     @patch("core.vpn_manager.run_sudo")
     def test_statusall_installed_parsed(self, mock_run):

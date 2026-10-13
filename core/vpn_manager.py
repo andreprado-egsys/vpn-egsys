@@ -20,15 +20,36 @@ CONFIG_DIR = os.path.expanduser('~/.config/snx-rs')
 VPN_EGSYS_DIR = os.path.expanduser('~/.config/vpn-egsys')
 
 IPSEC_APPLY_PATH = '/usr/lib/vpn-egsys/vpn-ipsec-apply'
+IPSEC_CTL_PATH = '/usr/lib/vpn-egsys/vpn-ipsec-ctl'
 
 
 def run_sudo(args: List[str], timeout: int = 30, capture: bool = True) -> subprocess.CompletedProcess:
     """Executa via sudo -n (NOPASSWD); se exigir senha, re-tenta interativo no terminal."""
     cmd = ['sudo', '-n'] + list(args)
     r = subprocess.run(cmd, capture_output=capture, text=True, timeout=timeout)
-    if r.returncode == 1 and capture and 'password is required' in (r.stderr or ''):
+    err = (r.stderr or '') if capture else ''
+    needs_pw = 'password is required' in err or 'interactive authentication' in err
+    if r.returncode == 1 and capture and needs_pw:
         r = subprocess.run(['sudo'] + list(args), text=True, timeout=timeout)
     return r
+
+
+def ipsec_cli(backend: str, action: str, name: Optional[str] = None,
+              timeout: int = 15) -> subprocess.CompletedProcess:
+    """Operação strongSwan privilegiada: via wrapper vpn-ipsec-ctl quando instalado
+    (sudoers sem wildcards — único esquema que casa no sudo-rs), senão comando cru."""
+    if os.path.exists(IPSEC_CTL_PATH):
+        args = [IPSEC_CTL_PATH, backend, action] + ([name] if name else [])
+        return run_sudo(args, timeout=timeout)
+    raw = {
+        ('stroke', 'up'): ['ipsec', 'up', name],
+        ('stroke', 'down'): ['ipsec', 'down', name],
+        ('stroke', 'status'): ['ipsec', 'statusall'],
+        ('swanctl', 'up'): ['swanctl', '--initiate', '--ike', name],
+        ('swanctl', 'down'): ['swanctl', '--terminate', '--ike', name],
+        ('swanctl', 'status'): ['swanctl', '--list-sas'],
+    }[(backend, action)]
+    return run_sudo(raw, timeout=timeout)
 
 KNOWN_LABELS: Dict[str, str] = {
     'vpnro': 'VPN RO - Rondônia',
@@ -205,7 +226,8 @@ def is_ipsec_v2_profile(data: Dict[str, str]) -> bool:
 
 def render_stroke_block(profiles: Dict[str, Dict[str, Any]]) -> str:
     """Bloco gerado para /etc/ipsec.conf (stroke IKEv1 Main Mode + PSK + XAuth)."""
-    lines = [MARK_BEGIN]
+    lines = [MARK_BEGIN, "config setup",
+             '    charondebug="ike 1, knl 1, cfg 1, esp 0"', ""]
     rendered = 0
     for vpn_id, data in sorted(profiles.items()):
         if not is_ipsec_v1_profile(data):
@@ -226,18 +248,28 @@ def render_stroke_block(profiles: Dict[str, Dict[str, Any]]) -> str:
             "    keyexchange=ikev1",
             f"    aggressive={aggressive}",
             "    authby=psk",
+            "",
             f"    ike={ike}",
             f"    esp={esp}",
+            "",
+            "    ikelifetime=86400s",
+            "    lifetime=43200s",
+            "    dpdaction=restart",
+            "    dpddelay=30s",
+            "    dpdtimeout=120s",
+            "",
             "    left=%defaultroute",
             "    leftauth=psk",
             "    leftauth2=xauth",
             "    leftid=%any",
             f"    xauth_identity={user}",
             "    leftsourceip=%config",
+            "",
             f"    right={server}",
             "    rightauth=psk",
             "    rightid=%any",
             f"    rightsubnet={routes}",
+            "",
             f"    forceencaps={forceencaps}",
             "",
         ])
@@ -465,8 +497,7 @@ class VPNBackend:
             return False, ("Nenhum backend IPsec encontrado. Execute 'sudo ./install.sh' "
                            "para provisionar strongSwan e o helper vpn-ipsec-apply.")
 
-        cmd = ['swanctl', '--initiate', '--ike', name] if v2 else ['ipsec', 'up', name]
-        res = run_sudo(cmd, timeout=40)
+        res = ipsec_cli('swanctl' if v2 else 'stroke', 'up', name, timeout=40)
         kind = 'IKEv2/swanctl' if v2 else 'IKEv1 XAuth/stroke'
         if res.returncode == 0:
             # rc 0 no stroke apenas aceita a iniciação; a SA precisa ficar INSTALLED
@@ -496,9 +527,9 @@ class VPNBackend:
             return True, "Nada a desconectar."
         data = conf.get('data', {})
         if is_ipsec_v2_profile(data) and shutil.which('swanctl'):
-            run_sudo(['swanctl', '--terminate', '--ike', name], timeout=15, capture=True)
+            ipsec_cli('swanctl', 'down', name, timeout=15)
         if shutil.which('ipsec'):
-            run_sudo(['ipsec', 'down', name], timeout=15, capture=True)
+            ipsec_cli('stroke', 'down', name, timeout=15)
         if VPNBackend.is_ipsec_active_linux(conf):
             return False, (f"FALHOU ao desconectar {label or name}: a SA continua ativa "
                            "(verifique sudo NOPASSWD de 'ipsec down').")
@@ -512,7 +543,7 @@ class VPNBackend:
             return False
         data = conf.get('data', {})
         if is_ipsec_v2_profile(data) and shutil.which('swanctl'):
-            r = run_sudo(['swanctl', '--list-sas'], timeout=10, capture=True)
+            r = ipsec_cli('swanctl', 'status', timeout=10)
             if r.returncode == 0:
                 for line in r.stdout.splitlines():
                     if line.strip().startswith(f"{name}:") and 'ESTABLISHED' in line:
@@ -520,7 +551,7 @@ class VPNBackend:
             return False
         if not shutil.which('ipsec'):
             return False
-        r = run_sudo(['ipsec', 'statusall'], timeout=10, capture=True)
+        r = ipsec_cli('stroke', 'status', timeout=10)
         if r.returncode != 0:
             return False
         for line in r.stdout.splitlines():
@@ -538,7 +569,7 @@ class VPNBackend:
         if not name:
             return []
         if is_ipsec_v2_profile(data) and shutil.which('swanctl'):
-            r = run_sudo(['swanctl', '--list-sas'], timeout=10, capture=True)
+            r = ipsec_cli('swanctl', 'status', timeout=10)
             if r.returncode != 0:
                 return []
             ts: List[str] = []
@@ -556,7 +587,7 @@ class VPNBackend:
             return ts
         if not shutil.which('ipsec'):
             return []
-        r = run_sudo(['ipsec', 'statusall'], timeout=10, capture=True)
+        r = ipsec_cli('stroke', 'status', timeout=10)
         if r.returncode != 0:
             return []
         # statusall real: CHILD SAs usam chaves "name{n}:" — a linha INSTALLED traz o

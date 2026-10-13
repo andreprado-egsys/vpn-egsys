@@ -207,6 +207,7 @@ def main(argv) -> int:
     if not uninstall and profiles:
         if shutil.which('ipsec'):
             ensure_daemon()
+            subprocess.run(['ipsec', 'rereadsecrets'], check=False)
             subprocess.run(['ipsec', 'reload'], check=False)
         else:
             print("aviso: strongSwan (ipsec) não instalado; "

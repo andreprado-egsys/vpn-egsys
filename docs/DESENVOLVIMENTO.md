@@ -150,10 +150,11 @@ setup_sudoers() {
 
 # Provisionamento do backend IPsec (seção 11b)
 provision_ipsec_backend() {
-    # Copia core/ + vpn-ipsec-apply para /usr/lib/vpn-egsys
-    # Escreve sudoers NOPASSWD restrito (ipsec up|down vpn*, swanctl, apply)
+    # Copia core/ + vpn-ipsec-apply + vpn-ipsec-ctl para /usr/lib/vpn-egsys
+    # Escreve sudoers NOPASSWD com dois caminhos exatos (apply + ctl — sem curingas; sudo-rs
+    # 0.2.8 não casa coringa de argumento) e valida com visudo -c antes de instalar
     # Habilita strongswan-starter (desabilita strongswan/charon-systemd)
-    # Roda vpn-ipsec-apply --user $TARGET_USER
+    # Roda vpn-ipsec-apply --user $TARGET_USER (gravou secrets → rereadsecrets + reload)
 }
 
 # Configuração de VPN
@@ -522,15 +523,15 @@ sudo /usr/lib/vpn-egsys/vpn-ipsec-apply              # reaplica blocos gerenciad
 ipsec statusall | grep -E 'vpn.*INSTALLED'           # SA instalada (formato com chaves)
 ```
 
-### Testes Automatizados (Vigentes — suíte de 40 testes)
+### Testes Automatizados (Vigentes — suíte de 41 testes)
 
 O Quality Gate do projeto é o runner `./run_tests.sh` (obrigatório antes de qualquer commit):
 
 ```bash
 ./run_tests.sh
 # 1. bash -n            — sintaxe de todos os scripts shell
-# 2. python -m py_compile — todos os módulos Python (core, vpn, vpn-tray, helper)
-# 3. python -m unittest discover -s tests — 40 testes (27 unitários + 10 pentest + 3 CLI)
+# 2. python -m py_compile — todos os módulos Python (core, vpn, vpn-tray, helpers)
+# 3. python -m unittest discover -s tests — 41 testes (28 unitários + 10 pentest + 3 CLI)
 ```
 
 #### Estrutura da suíte (`tests/`)

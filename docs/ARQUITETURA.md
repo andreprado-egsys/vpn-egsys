@@ -40,8 +40,9 @@ O **vpn-egsys** é um sistema modular multi-protocolo (**Check Point SNX** e **I
 
 > **Nota (v2.2)**: no Linux Engine, o NetworkMgr atende **somente SNX** (dummy-iface). O IPsec é
 > tratado pelo strongSwan **nativo** — stroke (IKEv1 XAuth+PSK, padrão) e swanctl (IKEv2) — via
-> helper privilegiado `vpn-ipsec-apply`, que materializa os blocos gerenciados em
-> `/etc/ipsec.conf`/`/etc/ipsec.secrets` e `/etc/swanctl/conf.d/vpn-egsys.conf`. O plugin
+> helper privilegiado `vpn-ipsec-apply` (materializa os blocos gerenciados em
+> `/etc/ipsec.conf`/`/etc/ipsec.secrets` e `/etc/swanctl/conf.d/vpn-egsys.conf) e `vpn-ipsec-ctl`
+> (up/down/status, v2.2.4). O plugin
 > strongSwan do NM (IKEv2-only) foi removido do caminho.
 
 ---
@@ -142,7 +143,7 @@ flowchart TD
 | `remove_vpn()` | Remove VPN | `~/.config/snx-rs/vpn*.conf` |
 | `regenerate_aliases()` | Recria aliases no shell | `.bashrc`, `.zshrc` |
 | `update_tray()` | Reinicia vpn-tray | Processos |
-| Bloco **10b** — backend IPsec (v2.2.1) | Provisiona o lado privilegiado: copia `core/` + `vpn-ipsec-apply` para `/usr/lib/vpn-egsys`, regrava `/etc/sudoers.d/vpn-egsys` (validado com `visudo -c`), habilita `strongswan-starter` e roda `vpn-ipsec-apply` | `/usr/lib/vpn-egsys/*`, `/etc/sudoers.d/vpn-egsys`, unidades systemd, `/etc/ipsec.*` |
+| Bloco **10b** — backend IPsec (v2.2.1, ampliado na v2.2.4) | Provisiona o lado privilegiado: copia `core/` + `vpn-ipsec-apply` + `vpn-ipsec-ctl` para `/usr/lib/vpn-egsys`, regrava `/etc/sudoers.d/vpn-egsys` com dois caminhos exatos (validado com `visudo -c`), habilita `strongswan-starter` e roda `vpn-ipsec-apply` (que agora também faz `rereadsecrets`/`reload`) | `/usr/lib/vpn-egsys/*`, `/etc/sudoers.d/vpn-egsys`, unidades systemd, `/etc/ipsec.*` |
 
 > Desde a v2.2.1, `git pull && ./update.sh` cobre **100%** do cliente em máquina já instalada
 > (userland + helper/sudoers/starter), espelhando a seção 11b do `install.sh`.
@@ -202,16 +203,16 @@ class VPNTray:
     ├── get_active_vpn()
     │   ├── check ip link show snx-xfrm
     │   └── check ps aux para processo snx-rs
-    ├── check_status()
-    │   ├── Chamado a cada 3 segundos via GLib.timeout_add_seconds
-    │   ├── Atualiza ícone (vpn-connected/vpn-disconnected)
+    ├── check_status() / _status_loop() [v2.2.4]
+    │   ├── thread poller único (daemon) a cada 5s — GetLayout do painel nunca bloqueia
+    │   ├── Atualiza ícone (vpn-connected/vpn-disconnected) via GLib.idle_add
     │   └── Atualiza título e label de status
     ├── on_connect() / _async_connect() [v2.2.2]
     │   ├── threading.Thread(daemon=True) — conexão assíncrona não-bloqueante
     │   ├── status_item exibe "⌛ Conectando {label}..." imediatamente
     │   ├── core.vpn_manager.connect_vpn(id)
     │   │   ├── SNX   → snxctl connect (daemon command mode) + nmcli up <label>
-    │   │   └── IPsec → vpn-ipsec-apply → ipsec up / swanctl --initiate
+    │   │   └── IPsec → vpn-ipsec-apply → vpn-ipsec-ctl stroke/swanctl up [v2.2.4]
     │   ├── GLib.idle_add(self.check_status) — atualização segura da UI
     │   └── notify-send — notificação nativa no desktop
     ├── on_disconnect() / _async_disconnect() [v2.2.2]
@@ -306,26 +307,34 @@ User → vpn/vpn-tray → connect_vpn() → VPNBackend.connect_ipsec_linux()
   │        ├── /etc/ipsec.secrets     (PSK + XAUTH, 0600, bloco gerenciado)
   │        └── /etc/swanctl/conf.d/vpn-egsys.conf (perfis ikev2)
   │
-  ├── ikev1-xauth → sudo ipsec up vpnXX    (stroke / strongswan-starter)
-  ├── ikev2       → sudo swanctl --initiate --ike vpnXX
-  └── verificação: SA INSTALLED em ipsec statusall (rc 0 sozinho NÃO conecta)
+  ├── ikev1-xauth → sudo vpn-ipsec-ctl stroke up vpnXX    (strongswan-starter)
+  ├── ikev2       → sudo vpn-ipsec-ctl swanctl up vpnXX   (--initiate --ike)
+  └── verificação: SA INSTALLED via sudo vpn-ipsec-ctl * status (rc 0 sozinho NÃO conecta)
 ```
+
+> v2.2.4: todo up/down/status passa pelo wrapper `/usr/lib/vpn-egsys/vpn-ipsec-ctl` (sudoers com
+> caminhos exatos, sem curingas — exigência do `sudo-rs` 0.2.8). O core (`ipsec_cli()`) cai para
+> as chamadas brutas `ipsec`/`swanctl` apenas se o ctl não estiver instalado.
 
 ### 3. Fluxo de Monitoramento
 
 ```
-GLib.timeout_add_seconds(3, check_status)
-  │
-  └── check_status()
+threading.Thread(_status_loop, daemon=True)  — poller único de longa duração (v2.2.4)
+  │   (antes: GLib.timeout_add_seconds(3, check_status) síncrono — congelava o
+  │    ícone no painel GNOME quando o status demorava mais que o timeout do GetLayout)
+  └── a cada 5s: get_active_vpn() → GLib.idle_add(_apply_status)
       │
       ├── get_active_vpn()
       │   ├── ip link show snx-xfrm
       │   └── ps aux | grep snx-rs
       │
-      └── Atualiza UI:
+      └── Atualiza UI (na thread Gtk, via idle_add):
           ├── indicator.set_icon_full()
           ├── indicator.set_title()
           └── status_item.set_label()
+
+run_linux_tray(): RLIMIT_NOFILE elevado a 8192 (v2.2.4) — evita exaustão de fds
+quando subprocessos de status são criados em ciclo
 ```
 
 ---
@@ -350,7 +359,7 @@ GLib.timeout_add_seconds(3, check_status)
 | vpn-tray | `~/.local/bin/` | Script Python |
 | vpn (CLI) | `~/.local/bin/` | Script Python |
 | core/vpn_manager.py | `~/.local/bin/core/` | Módulo Python (userland) |
-| core/ + vpn-ipsec-apply | `/usr/lib/vpn-egsys/` | Helper privilegiado root (0755) |
+| core/ + vpn-ipsec-apply + vpn-ipsec-ctl | `/usr/lib/vpn-egsys/` | Helpers privilegiados root (0755) |
 | *.svg | `~/.local/share/icons/vpn-egsys/` | Ícones |
 | vpn-egsys.desktop | `~/.local/share/applications/` | Desktop Entry |
 | vpn-tray.desktop | `~/.config/autostart/` | Autostart |
@@ -371,17 +380,14 @@ GLib.timeout_add_seconds(3, check_status)
 
 Desde a v2.2.0 o `/etc/sudoers.d/vpn-egsys` instalado pelo `install.sh`/`update.sh` contém
 **somente** o conjunto restrito do backend IPsec (validado com `visudo -cf` antes de aplicar, 0440
-root:root). Os argumentos usam glob puro `*` (e não `vpn*`) porque o `sudo-rs` do Ubuntu 25.10+
-casa curingas com prefixo em argumentos de forma intermitente, quebrando silenciosamente o
-up/down da bandeja; a restrição real vem dos nomes de conexão, sempre sanitizados para
-`vpn[a-z0-9]+` e materializados apenas por root:
+root:root). Desde a v2.2.4 são **dois caminhos exatos, sem curingas** — o `sudo-rs` 0.2.8
+(Ubuntu 25.10+) não casa coringa de argumento em regra NOPASSWD (nem `vpn*`, nem ` *`), e toda a
+flexibilidade migrou para o wrapper `vpn-ipsec-ctl`, que revalida o nome (`^vpn[a-z0-9_-]{2,40}$`)
+e executa argv fixo do strongSwan. A restrição real vem dos nomes de conexão, sempre sanitizados
+para `vpn[a-z0-9]+` e materializados apenas por root:
 
 ```
-USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply,
-    /usr/bin/ipsec up *, /usr/bin/ipsec down *,
-    /usr/bin/ipsec statusall, /usr/bin/ipsec reload,
-    /usr/bin/swanctl --initiate *, /usr/bin/swanctl --terminate *,
-    /usr/bin/swanctl --list-sas
+USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply, /usr/lib/vpn-egsys/vpn-ipsec-ctl
 ```
 
 O caminho SNX dispensa sudo: o daemon roda como serviço systemd (`snx-rs.service`) e os binários
@@ -390,9 +396,10 @@ O caminho SNX dispensa sudo: o daemon roda como serviço systemd (`snx-rs.servic
 ainda as possuir, podem ser removidas com `sudo rm /etc/sudoers.d/vpn-egsys && ./update.sh`.
 
 **Riscos residuais:**
-- NOPASSWD para root nos binários strongSwan listados (mitigado pelo escopo fixo do helper:
-  ele só reescreve blocos entre marcadores `# BEGIN/END vpn-egsys (managed)` e os nomes de
-  conexão são sempre sanitizados para `vpn[a-z0-9]+`)
+- NOPASSWD apenas para os dois scripts gerenciados (`vpn-ipsec-apply`/`vpn-ipsec-ctl`) — desde a
+  v2.2.4 nenhum binário strongSwan está diretamente no sudoers; o ctl só aceita nomes de conn no
+  formato `vpn[a-z0-9_-]{2,40}` e os nomes só existem porque o helper os materializa como root em
+  `/etc/ipsec.conf` (escopo fixo entre marcadores `# BEGIN/END vpn-egsys (managed)`)
 
 **Mitigações:**
 - Arquivo com permissões 0440 (root:root)
@@ -470,7 +477,7 @@ password=base64_encoded_string
 | **Linguagens** | Bash, Python 3 |
 | **Frameworks** | GTK3, PyGObject, Ayatana AppIndicator |
 | **Total de Linhas** | ~3.860 (Bash + Python, incluindo suíte de testes) |
-| **Arquivos de Código** | 12 (install.sh, update.sh, uninstall.sh, user-setup.sh, nm-snx-setup.sh, 99-snx-vpn.sh, vpn, vpn-tray, vpn-ipsec-apply, core/vpn_manager.py, tests/×3) + `macos/` |
+| **Arquivos de Código** | 13 (install.sh, update.sh, uninstall.sh, user-setup.sh, nm-snx-setup.sh, 99-snx-vpn.sh, vpn, vpn-tray, vpn-ipsec-apply, vpn-ipsec-ctl, core/vpn_manager.py, tests/×3) + `macos/` |
 | **Arquivos de Configuração** | 1 (README.md, LICENSE, .gitignore, package.json) |
 | **Ícones** | 2 (SVG) |
 | **Documentação** | 6+ (README + docs/) |

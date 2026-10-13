@@ -30,7 +30,7 @@ Prover aos times de engenharia, DevOps e suporte N1/N2/N3 uma plataforma corpora
 - [x] Formalização das diretrizes operacionais de governança com [`AGENTS.md`](../AGENTS.md) e tríade de skills (`vpn-commit`, `vpn-docs-sync`, `vpn-jira-sync`).
 
 ### Fase 2.1: Pentest Black Box, Presets Estaduais & Hardening Multi-Usuário (Concluída - v2.1.1)
-- [x] Bateria de Pentest Defensivo Black Box (ACH-VPN-001 a ACH-VPN-010) com 18/18 testes verdes no Quality Gate (total vigente após a Fase 2.2: 40 testes).
+- [x] Bateria de Pentest Defensivo Black Box (ACH-VPN-001 a ACH-VPN-010) com 18/18 testes verdes no Quality Gate (total vigente após a Fase 2.2: 41 testes).
 - [x] Diálogo gráfico com Presets Rápidos de Estados (SC, TO, RO, PR, AM) e alternância reativa de campos IPsec no `vpn-tray`.
 - [x] Hardening Multi-Usuário com resolução de `$SUDO_USER`, permissão `0600`, e autostart sem root.
 - [x] Documento de governança de segurança [`docs/SECURITY.md`](SECURITY.md).
@@ -41,8 +41,14 @@ Prover aos times de engenharia, DevOps e suporte N1/N2/N3 uma plataforma corpora
 - [x] Conexão sem NM: apply → `ipsec up`/`swanctl --initiate` → poll de SA `INSTALLED` (parse corrigido para o formato real com chaves `conn{n}:`).
 - [x] **Verificação de rotas liberadas pelo gateway** (v2.2.1): `installed_remote_ts` + `missing_released_routes` com aviso explícito de traffic selector reduzido; validado ao vivo contra gateway simulado em netns.
 - [x] **Bandeja Assíncrona Não-Bloqueante (v2.2.2)**: concorrência via `threading.Thread(daemon=True)` em `vpn-tray` eliminando congelamentos de UI durante timeouts de rede ou desafios XAuth, com feedback imediato `⌛ Conectando...` e notificações desktop nativas.
-- [x] `update.sh` (bloco 10b) provisiona helper + sudoers + `strongswan-starter` — fluxo do analista `git clone`/`git pull && ./update.sh` com cobertura 100% em máquina já instalada.
-- [x] Suíte expandida para 40 testes (renderizadores, escapes, statusall real, cobertura de rotas, idempotência de marcadores).
+- [x] **Conformidade sudo-rs & verificação de desconexão (v2.2.3)**: `disconnect_ipsec_linux`
+  re-checa a SA e reporta falha real, `aggressive`/`forceencaps` do perfil respeitados no render
+  stroke, helper tolera binário `ipsec` ausente; validado ao vivo contra FortiGate AM SSP (2 hosts).
+  *(O sudoers "glob puro" desta versão foi substituído na v2.2.4 — o `sudo-rs` 0.2.8 não casa
+  nenhum coringa de argumento.)*
+- [x] **Wrapper `vpn-ipsec-ctl`, bandeja à prova de congelamento e modelo byte-a-byte do gateway (v2.2.4)**: sudoers com dois caminhos exatos (zero curingas), `ipsec_cli()` no core com fallback, `rereadsecrets`/`reload` automáticos no apply, stroke com `config setup`/`charondebug` + DPD no padrão do time do gateway, poller único de threads no `vpn-tray` (GetLayout 7,9s → 0,002s) e `RLIMIT_NOFILE` 8192; ciclo Conectar/Desconectar validado por clique D-Bus em 2 hosts reais.
+- [x] `update.sh` (bloco 10b) provisiona helpers + sudoers + `strongswan-starter` — fluxo do analista `git clone`/`git pull && ./update.sh` com cobertura 100% em máquina já instalada.
+- [x] Suíte expandida para 41 testes (renderizadores, escapes, statusall real, cobertura de rotas, idempotência de marcadores, fallback sem ctl).
 
 ### Fase 3: Segurança Avançada & Integração com Keyring (Planejada - Q4 2026)
 - [ ] **Integração com Keyring do Sistema**:
