@@ -10,6 +10,15 @@ usados pela empresa:
 - **IKEv2 (EAP + swanctl)** — para gateways que aceitam IKEv2, configurado pelo
   mesmo perfil com `ipsec-type=ikev2` (gerenciado em `/etc/swanctl/conf.d`).
 
+> **Paridade IKEv1 entre distribuições**: perfis `ikev1-xauth` exigem charon com
+> IKEv1 compilado. Em **Ubuntu/derivados** o pacote oficial (`strongswan`) já traz
+> IKEv1. Em **Arch/CachyOS**, strongSwan ≥ 6 é empacotado **sem** IKEv1 e o túnel
+> aborta com `IKE version 1 not supported` (sem chegar ao gateway). Correção:
+> rebuild do PKGBUILD oficial com `--enable-ikev1` (o código v1 entra em
+> `libcharon`, não existe `.so` separado) e pin `IgnorePkg = strongswan` no
+> `/etc/pacman.conf` para não perder o plugin em updates. `install.sh`/`update.sh`
+> detectam e avisam; o erro surge no `vpn`/tray com mensagem específica.
+
 ---
 
 ## 1. Fluxo de configuração

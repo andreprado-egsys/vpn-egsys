@@ -16,6 +16,10 @@ Gerenciador universal de VPNs, monitor de bandeja (`vpn-tray`), utilitário de t
   argumento), `rereadsecrets`/`reload` automáticos após aplicar perfis, stroke renderizado no modelo
   byte-a-byte do padrão do gateway (`config setup`/`charondebug` + DPD) e `vpn-tray` com poller único
   de threads (ícone do painel nunca mais congela; `GetLayout` 7,9s → 0,002s).
+- **Paridade IKEv1 entre distribuições (v2.2.5)**: o `vpn` e a bandeja detectam charon compilado
+  sem IKEv1 (strongSwan ≥ 6 dos repositórios Arch/CachyOS) e reportam a causa exata do abortamento
+  `IKE version 1 not supported` com a correção; `install.sh`/`update.sh` alertam sobre a ausência
+  do IKEv1 e sobre o pin `IgnorePkg = strongswan` necessário para não perdê-lo em updates.
 - **Presets Estaduais Rápidos na Bandeja (`vpn-tray`)**: Configuração em um clique para Santa Catarina (SC), Tocantins (TO), Rondônia (RO), Paraná (PR) e Amazonas (AM).
 - **Interface Reativa Multi-Protocolo**: Alternância automática de visibilidade para campos de IPsec (Chave PSK e Rotas customizadas).
 - **Hardening Multi-Usuário (`SUDO_USER`)**: Execuções com `sudo` isolam o home do usuário real e inicializam a bandeja na sessão gráfica correta (sem rodar como root).

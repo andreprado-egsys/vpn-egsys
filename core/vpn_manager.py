@@ -23,6 +23,22 @@ IPSEC_APPLY_PATH = '/usr/lib/vpn-egsys/vpn-ipsec-apply'
 IPSEC_CTL_PATH = '/usr/lib/vpn-egsys/vpn-ipsec-ctl'
 
 
+def charon_ikev1_missing() -> bool:
+    """True se o libcharon instalado foi compilado SEM IKEv1 (Arch/CachyOS strongSwan 6.x).
+
+    Em strongSwan >= 6 o IKEv1 é opcional em build; os pacotes Arch/CachyOS não o
+    embarcam, e o charon aborta perfis ikev1-xauth com 'IKE version 1 not supported'
+    antes de qualquer troca com o gateway. Ubuntu/derivados ainda trazem IKEv1.
+    """
+    for so in glob.glob('/usr/lib*/ipsec/libcharon.so*') + glob.glob('/usr/lib/strongswan/libcharon.so*'):
+        try:
+            with open(so, 'rb') as fh:
+                return b'task_manager_v1' not in fh.read()
+        except OSError:
+            continue
+    return False
+
+
 def run_sudo(args: List[str], timeout: int = 30, capture: bool = True) -> subprocess.CompletedProcess:
     """Executa via sudo -n (NOPASSWD); se exigir senha, re-tenta interativo no terminal."""
     cmd = ['sudo', '-n'] + list(args)
@@ -512,6 +528,11 @@ class VPNBackend:
                                       f"do gateway (as redes não são alcançáveis).")
                     return True, f"Túnel IPsec {label} conectado ({kind})."
                 time.sleep(2)
+            if not v2 and charon_ikev1_missing():
+                return False, (f"Negociação {kind} abortada: o charon deste sistema foi compilado SEM IKEv1 "
+                               f"('IKE version 1 not supported'). Em Arch/CachyOS instale um strongSwan rebuildado "
+                               f"com --enable-ikev1 e proteja-o com IgnorePkg=strongswan no /etc/pacman.conf; "
+                               f"em Ubuntu/derivados o pacote oficial já traz IKEv1.")
             return False, (f"Negociação {kind} iniciada mas a SA não estabeleceu "
                            f"(verifique credenciais no gateway; 'journalctl -u strongswan-starter').")
         lines = (res.stdout or res.stderr or "").strip().splitlines()

@@ -47,6 +47,7 @@ Prover aos times de engenharia, DevOps e suporte N1/N2/N3 uma plataforma corpora
   *(O sudoers "glob puro" desta versão foi substituído na v2.2.4 — o `sudo-rs` 0.2.8 não casa
   nenhum coringa de argumento.)*
 - [x] **Wrapper `vpn-ipsec-ctl`, bandeja à prova de congelamento e modelo byte-a-byte do gateway (v2.2.4)**: sudoers com dois caminhos exatos (zero curingas), `ipsec_cli()` no core com fallback, `rereadsecrets`/`reload` automáticos no apply, stroke com `config setup`/`charondebug` + DPD no padrão do time do gateway, poller único de threads no `vpn-tray` (GetLayout 7,9s → 0,002s) e `RLIMIT_NOFILE` 8192; ciclo Conectar/Desconectar validado por clique D-Bus em 2 hosts reais.
+- [x] **Paridade IKEv1 entre distribuições (v2.2.5)**: `charon_ikev1_missing()` no core detecta libcharon sem `task_manager_v1` (strongSwan ≥ 6 do Arch/CachyOS) e o `vpn`/tray devolvem a causa real do `IKE version 1 not supported`; guard de pacman no `install.sh`/`update.sh` avisa quando falta o IKEv1 ou quando o `IgnorePkg = strongswan` não está pinado; guia `docs/IPSEC.md` documenta o rebuild `--enable-ikev1`. Validado em host Arch/CachyOS com `strongswan 6.1.0-2.1`.
 - [x] `update.sh` (bloco 10b) provisiona helpers + sudoers + `strongswan-starter` — fluxo do analista `git clone`/`git pull && ./update.sh` com cobertura 100% em máquina já instalada.
 - [x] Suíte expandida para 41 testes (renderizadores, escapes, statusall real, cobertura de rotas, idempotência de marcadores, fallback sem ctl).
 

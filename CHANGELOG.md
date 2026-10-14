@@ -4,6 +4,18 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.2.5] - 2026-10-13
+
+### Corrigido
+- **Paridade IKEv1 Arch/CachyOS vs Ubuntu** — perfis `ikev1-xauth` (ex: VPN AM SSP) falhavam
+  em silêncio no CachyOS porque o `strongswan` 6.x dos repositórios Arch é compilado sem
+  IKEv1 (`IKE version 1 not supported` no charon, antes de qualquer troca com o gateway).
+  `core/vpn_manager.py` detecta o binário sem `task_manager_v1` e devolve mensagem específica
+  com a correção (rebuild `--enable-ikev1` + `IgnorePkg = strongswan`); `install.sh` e
+  `update.sh` verificam IKEv1 e o pin do pacman em sistemas com pacman e alertam; o guia
+  `docs/IPSEC.md` documenta a diferença entre distribuições. Validado em host Arch/CachyOS com
+  `strongswan 6.1.0-2.1` rebuildado: `ipsec up vpnamssp` estabelece XAuth + CHILD_SA.
+
 ## [2.2.4] - 2026-10-13
 
 ### Adicionado

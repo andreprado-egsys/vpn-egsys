@@ -416,6 +416,18 @@ if systemctl list-unit-files 2>/dev/null | grep -q '^strongswan-starter'; then
         sudo systemctl restart strongswan-starter
     info "Daemon strongswan-starter habilitado (charon-systemd não carrega conns stroke)."
 fi
+# Paridade IKEv1 (perfis ikev1-xauth): strongSwan >= 6 dos repositórios Arch/CachyOS
+# é compilado SEM IKEv1 ('IKE version 1 not supported'); em Ubuntu/derivados o
+# pacote oficial ainda o traz. Onde faltar, exigir rebuild local + pin no pacman.
+if command -v pacman >/dev/null 2>&1; then
+    if ! grep -qa task_manager_v1 /usr/lib/ipsec/libcharon.so.0.0.0 2>/dev/null; then
+        warn "strongSwan deste sistema (Arch/CachyOS) está SEM IKEv1 — perfis ikev1-xauth falharão."
+        warn "Instale um rebuild com --enable-ikev1 e proteja com 'IgnorePkg = strongswan' no /etc/pacman.conf."
+    elif ! grep -Eq '^ *IgnorePkg.*strongswan' /etc/pacman.conf 2>/dev/null; then
+        warn "IKEv1 presente; adicione 'IgnorePkg = strongswan' ao /etc/pacman.conf para não perdê-lo em updates."
+    fi
+fi
+
 sudo /usr/lib/vpn-egsys/vpn-ipsec-apply --user "$TARGET_USER" || true
 
 # --- 12. Desktop entry e autostart ---
