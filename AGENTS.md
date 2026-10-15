@@ -8,6 +8,9 @@ IKEv2 swanctl) e compatibilidade cross-platform (**Linux** e **macOS**).
 - **Multi-Protocolo**: Suporte transparente a Check Point (`snx-rs` / `snxctl`) e IPsec (no Linux,
   strongSwan nativo stroke/swanctl materializado pelo helper privilegiado `vpn-ipsec-apply` —
   o NetworkManager **não** é usado para IPsec; no macOS, `scutil --nc` / `networksetup` nativo).
+  Perfis `ikev1-xauth` exigem charon compilado com IKEv1: o pacote Arch/CachyOS de strongSwan ≥ 6
+  **não** o embarca (rebuild `--enable-ikev1` + pin `IgnorePkg`), o do Debian/Ubuntu sim
+  (`docs/IPSEC.md`, `docs/INSTALAÇÃO.md`).
 - **Cross-Platform**: Instalação e execução com 0 atrito em Linux (Debian, Ubuntu, Arch, CachyOS) e macOS (Intel e Apple Silicon M1/M2/M3/M4).
 - **Zero credenciais em claro no repositório**: Arquivos de configuração `.conf` locais são gerados
   exclusivamente em runtime sob `~/.config/snx-rs/` com permissão estrita `0600` e gitignored.

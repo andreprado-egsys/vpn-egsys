@@ -331,12 +331,19 @@ ip route show table all | grep snx  # rotas pushed pelo gateway
 sudo /usr/lib/vpn-egsys/vpn-ipsec-apply --check  # perfil dessincronizado? (exit 1)
 ipsec statusall | grep -E 'vpn.*INSTALLED'       # SA instalada?
 ipsec statusall | grep '==='                     # TS reais liberados pelo gateway
+
+# IPsec em Arch/CachyOS: o charon pode ter sido compilado SEM IKEv1 (v2.2.5)
+grep -qa task_manager_v1 /usr/lib/ipsec/libcharon.so.0.0.0 && echo "IKEv1 OK" || echo "SEM IKEv1"
 ```
 
 **Soluções comuns:**
 - Verificar credenciais no `.conf` (o connect SNX re-copia o perfil ativo)
 - "Conectado mas sem rota interna": o gateway reduz o traffic selector — o proprio
   `vpn connect` agora avisa (docs/IPSEC.md §4); e politica do gateway, nao do cliente
+- "Negociação abortada: o charon deste sistema foi compilado SEM IKEv1": não é credencial. O
+  strongSwan ≥ 6 dos repositórios Arch/CachyOS vem sem IKEv1 e derruba o conn `ikev1-xauth` antes
+  de falar com o gateway; reconstruir com `--enable-ikev1` e pinar `IgnorePkg = strongswan`
+  (docs/INSTALAÇÃO.md — Arch Linux e derivados). Em Debian/Ubuntu o pacote oficial já traz IKEv1
 - Reiniciar o daemon SNX: `sudo systemctl restart snx-rs.service`
 
 ### Caso 5: Mudar para Outro Computador

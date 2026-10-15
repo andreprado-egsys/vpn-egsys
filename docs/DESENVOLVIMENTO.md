@@ -154,6 +154,8 @@ provision_ipsec_backend() {
     # Escreve sudoers NOPASSWD com dois caminhos exatos (apply + ctl — sem curingas; sudo-rs
     # 0.2.8 não casa coringa de argumento) e valida com visudo -c antes de instalar
     # Habilita strongswan-starter (desabilita strongswan/charon-systemd)
+    # Guarda de paridade IKEv1 (v2.2.5, só com pacman no PATH): warn se o libcharon não tiver
+    # task_manager_v1, ou se IgnorePkg não listar strongswan — não falha a instalação
     # Roda vpn-ipsec-apply --user $TARGET_USER (gravou secrets → rereadsecrets + reload)
 }
 
@@ -552,6 +554,13 @@ python3 -m unittest tests.test_security_pentest -v
 > Os testes de backend usam `@patch` em `core.vpn_manager.run_sudo`/`shutil.which` e nunca tocam
 > no sistema real — o túnel AM SSP validado ao vivo em máquina física permanece como
 > evidência complementar (ver `docs/IPSEC.md` §3–4).
+
+> **Dívida de teste (v2.2.5):** `charon_ikev1_missing()` lê o `libcharon` real de
+> `/usr/lib*/ipsec/`, então fica fora da suíte unitária (que por construção não toca o sistema).
+> A verificação é manual, no host: `python3 -c "import sys; sys.path.insert(0,'.'); from
+> core.vpn_manager import charon_ikev1_missing as f; print(f())"` — `False` em Ubuntu e em Arch com
+> rebuild `--enable-ikev1`, `True` em Arch com o pacote do repositório. Cobertura automatizada
+> exigiria injetar o caminho do `.so` por parâmetro ou `mock_open`.
 
 ---
 

@@ -141,6 +141,32 @@ sudo pacman -S --needed --noconfirm \
 - CachyOS
 - Garuda
 
+> **IKEv1 no Arch/CachyOS (v2.2.5)** — o pacote `strongswan` ≥ 6 desses repositórios é compilado
+> **sem IKEv1**, então os perfis `ikev1-xauth` (Fortinet/FortiGate e similares) abortam com
+> `IKE version 1 not supported` antes de negociar com o gateway; em Debian/Ubuntu o pacote oficial
+> ainda traz IKEv1 e funciona sem passo extra. Correção em máquina Arch: rebuild do PKGBUILD
+> oficial habilitando o plugin, instalar o pacote resultante e piná-lo para o update do
+> repositório não revertê-lo.
+>
+> ```bash
+> # 1. Reconstruir strongSwan com IKEv1 (o código v1 entra dentro de libcharon; em 6.x
+> #    não existe libstrongswan-ikev1.so para verificar)
+> asp strongswan && cd strongswan
+> #    no PKGBUILD: acrescentar --enable-ikev1 ao ./configure e subir o pkgrel (ex: 2 -> 2.1)
+> makepkg -si
+>
+> # 2. Conferir se o charon agora tem IKEv1
+> grep -qa task_manager_v1 /usr/lib/ipsec/libcharon.so.0.0.0 && echo "IKEv1 OK"
+>
+> # 3. Pin na linha IgnorePkg do pacman.conf, para o update do repositório não reverter o rebuild
+> sudo sed -ri '/^IgnorePkg/s/$/ strongswan/' /etc/pacman.conf
+> grep -n '^IgnorePkg' /etc/pacman.conf   # deve terminar com "... strongswan"
+> ```
+>
+> `install.sh`/`update.sh` refazem as conferências 2 e 3 automaticamente e emitem `warn` quando
+> alguma falha (sem abortar a instalação). Alternativas ao rebuild: backend Libreswan, ou migrar
+> o perfil para IKEv2/swanctl se o gateway suportar.
+
 #### Fedora/RHEL e derivados
 
 ```bash
@@ -576,6 +602,27 @@ ip addr show snx-xfrm
 sudo chmod 0440 /etc/sudoers.d/vpn-egsys
 ```
 
+### Problema: "IKE version 1 not supported" ao conectar um perfil IKEv1 (Arch/CachyOS)
+
+**Sintoma (v2.2.5):** o `vpn connect` / a bandeja reportam que a negociação foi abortada porque o
+charon do sistema foi compilado sem IKEv1, e a SA nem chega a ser tentada com o gateway. Nos
+`journalctl -u strongswan-starter` aparece `IKE version 1 not supported`.
+
+**Causa:** strongSwan ≥ 6 dos repositórios Arch/CachyOS não habilita IKEv1 no build. O pacote
+oficial do Debian/Ubuntu ainda habilita, por isso o mesmo perfil loga em uma máquina e não na outra.
+
+**Solução:** reconstruir o `strongswan` com `--enable-ikev1` e pinar o pacote (ver a seção
+*Arch Linux e derivados*). Conferência rápida:
+
+```bash
+grep -qa task_manager_v1 /usr/lib/ipsec/libcharon.so.0.0.0 && echo "IKEv1 OK" || echo "SEM IKEv1"
+grep -n '^IgnorePkg' /etc/pacman.conf
+```
+
+Em versões anteriores do produto essa falha era reportada como "verifique credenciais no gateway",
+que era enganadora; a detecção por símbolo no `libcharon` existe exatamente para separar os dois
+casos.
+
 ---
 
 ## Instalação Manual
@@ -623,9 +670,11 @@ rm -rf snx-rs-v6.0.6-x86_64-unknown-linux-gnu* snx-rs
 ### 3. Configurar Sudoers (backend IPsec — o mesmo formato do install.sh)
 
 ```bash
-# Criar arquivo (substitua $USER pelo usuário analista)
+# Criar arquivo (substitua $USER pelo usuário analista). Desde a v2.2.4 são DOIS caminhos
+# exatos, sem curinga de argumento: o sudo-rs 0.2.8 (Ubuntu 25.10+) não casa nenhum `*`
+# em argumento, e as regras antigas `ipsec up *` passavam a exigir senha em silêncio.
 cat <<EOF | sudo tee /etc/sudoers.d/vpn-egsys > /dev/null
-$USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply, /usr/bin/ipsec up *, /usr/bin/ipsec down *, /usr/bin/ipsec statusall, /usr/bin/ipsec reload, /usr/bin/swanctl --initiate *, /usr/bin/swanctl --terminate *, /usr/bin/swanctl --list-sas
+$USER ALL=(root) NOPASSWD: /usr/lib/vpn-egsys/vpn-ipsec-apply, /usr/lib/vpn-egsys/vpn-ipsec-ctl
 EOF
 
 # Ajustar permissões
@@ -633,10 +682,14 @@ sudo chmod 0440 /etc/sudoers.d/vpn-egsys
 sudo chown root:root /etc/sudoers.d/vpn-egsys
 
 # Validar ANTES de usar (se falhar, remova o arquivo)
-sudo visudo -cf /etc/sudoers.d/vpn-egsys
+sudo visudo -c
 ```
 
-> O caminho SNX não exige sudo (daemon `snx-rs.service` + SUID nos binários).
+> O `vpn-ipsec-ctl` (instalado junto do helper em `/usr/lib/vpn-egsys`) é quem executa
+> `ipsec up/down/statusall` e `swanctl --initiate/--terminate/--list-sas`: valida o nome do conn
+> contra `^vpn[a-z0-9_-]{2,40}$` e aplica timeouts, então nenhum binário strongSwan vai
+> diretamente para o sudoers. O caminho SNX não exige sudo (daemon `snx-rs.service` + SUID nos
+> binários).
 
 ### 4. Configurar VPNs
 

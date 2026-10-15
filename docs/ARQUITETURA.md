@@ -144,6 +144,7 @@ flowchart TD
 | `regenerate_aliases()` | Recria aliases no shell | `.bashrc`, `.zshrc` |
 | `update_tray()` | Reinicia vpn-tray | Processos |
 | Bloco **10b** — backend IPsec (v2.2.1, ampliado na v2.2.4) | Provisiona o lado privilegiado: copia `core/` + `vpn-ipsec-apply` + `vpn-ipsec-ctl` para `/usr/lib/vpn-egsys`, regrava `/etc/sudoers.d/vpn-egsys` com dois caminhos exatos (validado com `visudo -c`), habilita `strongswan-starter` e roda `vpn-ipsec-apply` (que agora também faz `rereadsecrets`/`reload`) | `/usr/lib/vpn-egsys/*`, `/etc/sudoers.d/vpn-egsys`, unidades systemd, `/etc/ipsec.*` |
+| Guarda de **paridade IKEv1** (v2.2.5, só em distro com `pacman`) | `install.sh`/`update.sh` testam a presença de `task_manager_v1` no `libcharon` e do pin `IgnorePkg = strongswan` no `/etc/pacman.conf`, e emitem `warn` quando falta o IKEv1 ou quando o rebuild está vulnerável a ser substituído por update do repositório | Nenhum (somente aviso no output) |
 
 > Desde a v2.2.1, `git pull && ./update.sh` cobre **100%** do cliente em máquina já instalada
 > (userland + helper/sudoers/starter), espelhando a seção 11b do `install.sh`.
@@ -315,6 +316,14 @@ User → vpn/vpn-tray → connect_vpn() → VPNBackend.connect_ipsec_linux()
 > v2.2.4: todo up/down/status passa pelo wrapper `/usr/lib/vpn-egsys/vpn-ipsec-ctl` (sudoers com
 > caminhos exatos, sem curingas — exigência do `sudo-rs` 0.2.8). O core (`ipsec_cli()`) cai para
 > as chamadas brutas `ipsec`/`swanctl` apenas se o ctl não estiver instalado.
+
+> v2.2.5: antes de culpar a credencial, o core chama `charon_ikev1_missing()`, que inspeciona o
+> `libcharon` instalado em busca de `task_manager_v1`. Em strongSwan ≥ 6 o IKEv1 é opcional de
+> build e os pacotes Arch/CachyOS não o embarcam — o charon aborta o conn com
+> `IKE version 1 not supported` sem falar com o gateway. Nesse caso a falha vira mensagem
+> específica (rebuild `--enable-ikev1` + `IgnorePkg = strongswan`) em vez do genérico
+> "verifique credenciais no gateway". Em 6.x o código v1 compila dentro de `libcharon`, portanto
+> **não** existe `libstrongswan-ikev1.so` para listar.
 
 ### 3. Fluxo de Monitoramento
 

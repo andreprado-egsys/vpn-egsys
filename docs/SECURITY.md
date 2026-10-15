@@ -32,6 +32,11 @@ Este documento consolida a arquitetura de segurança, matriz de mitigação cont
   não casa coringas de argumento em regra NOPASSWD, e a restrição efetiva permanece sendo o nome
   sanitizado + materialização apenas por root em `/etc/ipsec.conf`.
 
+- **Diagnóstico de build do strongSwan (v2.2.5)**: `charon_ikev1_missing()` faz leitura de
+  somente-`r` do `libcharon` instalado para distinguir "charon sem IKEv1" de credencial errada,
+  eliminando a mensagem enganosa anterior. Não introduz escrita, elevação de privilégio nem nova
+  superfície de entrada (o caminho do binário é constante interna, nunca vem do perfil).
+
 ---
 
 ## 🧪 Execução do Quality Gate de Segurança
