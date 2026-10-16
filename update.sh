@@ -24,6 +24,7 @@ TARGET_HOME="${TARGET_HOME:-$HOME}"
 CONFIG_DIR="$TARGET_HOME/.config/snx-rs"
 LOCAL_BIN="$TARGET_HOME/.local/bin"
 ICON_DIR="$TARGET_HOME/.local/share/icons/vpn-egsys"
+HICOLOR_DIR="$TARGET_HOME/.local/share/icons/hicolor/scalable/apps"
 
 info()  { echo -e "${GREEN}[✓]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
@@ -290,13 +291,14 @@ warn "Atualizando conexões VPN no NetworkManager..."
 bash "$SCRIPT_DIR/nm-snx-setup.sh"
 
 # --- 10. Atualizar vpn-tray, CLI vpn, core e ícones ---
-mkdir -p "$LOCAL_BIN" "$ICON_DIR"
+mkdir -p "$LOCAL_BIN" "$ICON_DIR" "$HICOLOR_DIR"
 cp "$SCRIPT_DIR/vpn-tray" "$LOCAL_BIN/vpn-tray"
 chmod +x "$LOCAL_BIN/vpn-tray"
 cp "$SCRIPT_DIR/vpn" "$LOCAL_BIN/vpn"
 chmod +x "$LOCAL_BIN/vpn"
 cp -r "$SCRIPT_DIR/core" "$LOCAL_BIN/"
 cp "$SCRIPT_DIR/icons/"*.svg "$ICON_DIR/"
+cp "$SCRIPT_DIR/icons/"*.svg "$HICOLOR_DIR/"
 info "vpn-tray, CLI universal 'vpn' e ícones atualizados."
 
 # --- 10b. Backend IPsec: helpers root, sudoers e strongswan-starter ---

@@ -12,6 +12,7 @@ NC='\033[0m'
 CONFIG_DIR="$HOME/.config/snx-rs"
 LOCAL_BIN="$HOME/.local/bin"
 ICON_DIR="$HOME/.local/share/icons/vpn-egsys"
+HICOLOR_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
 AUTOSTART_DIR="$HOME/.config/autostart"
 APPS_DIR="$HOME/.local/share/applications"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -43,6 +44,8 @@ cp "$SCRIPT_DIR/vpn" "$LOCAL_BIN/vpn"
 chmod +x "$LOCAL_BIN/vpn"
 cp -r "$SCRIPT_DIR/core" "$LOCAL_BIN/"
 cp "$SCRIPT_DIR/icons/"*.svg "$ICON_DIR/"
+mkdir -p "$HICOLOR_DIR"
+cp "$SCRIPT_DIR/icons/"*.svg "$HICOLOR_DIR/"
 info "vpn-tray, CLI vpn e ícones instalados."
 
 # --- 2. Autostart e desktop entry ---

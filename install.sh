@@ -26,6 +26,7 @@ LOCAL_BIN="$TARGET_HOME/.local/bin"
 APPS_DIR="$TARGET_HOME/.local/share/applications"
 AUTOSTART_DIR="$TARGET_HOME/.config/autostart"
 ICON_DIR="$TARGET_HOME/.local/share/icons/vpn-egsys"
+HICOLOR_DIR="$TARGET_HOME/.local/share/icons/hicolor/scalable/apps"
 
 info()  { echo -e "${GREEN}[✓]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
@@ -379,13 +380,14 @@ warn "Criando conexões VPN no NetworkManager..."
 bash "$SCRIPT_DIR/nm-snx-setup.sh"
 
 # --- 11. vpn-tray, CLI vpn, core e ícones ---
-mkdir -p "$LOCAL_BIN" "$ICON_DIR"
+mkdir -p "$LOCAL_BIN" "$ICON_DIR" "$HICOLOR_DIR"
 cp "$SCRIPT_DIR/vpn-tray" "$LOCAL_BIN/vpn-tray"
 chmod +x "$LOCAL_BIN/vpn-tray"
 cp "$SCRIPT_DIR/vpn" "$LOCAL_BIN/vpn"
 chmod +x "$LOCAL_BIN/vpn"
 cp -r "$SCRIPT_DIR/core" "$LOCAL_BIN/"
 cp "$SCRIPT_DIR/icons/"*.svg "$ICON_DIR/"
+cp "$SCRIPT_DIR/icons/"*.svg "$HICOLOR_DIR/"
 info "vpn-tray, CLI universal 'vpn' e ícones instalados."
 
 # --- 11b. Backend IPsec: helpers root, sudoers e strongswan-starter ---
@@ -511,11 +513,12 @@ if [[ "$MULTI_USER" == "s" || "$MULTI_USER" == "S" ]]; then
             [ -d "$user_home" ] || continue
             u=$(basename "$user_home")
             [ "$u" = "$(whoami)" ] && continue
-            sudo -u "$u" mkdir -p "$user_home/.local/bin" "$user_home/.local/share/icons/vpn-egsys" "$user_home/.config/autostart" "$user_home/.local/share/applications"
+            sudo -u "$u" mkdir -p "$user_home/.local/bin" "$user_home/.local/share/icons/vpn-egsys" "$user_home/.local/share/icons/hicolor/scalable/apps" "$user_home/.config/autostart" "$user_home/.local/share/applications"
             sudo cp "$SCRIPT_DIR/vpn-tray" "$user_home/.local/bin/vpn-tray"
             sudo chmod +x "$user_home/.local/bin/vpn-tray"
             sudo cp "$SCRIPT_DIR/icons/"*.svg "$user_home/.local/share/icons/vpn-egsys/"
-            sudo chown -R "$u:$u" "$user_home/.local/bin/vpn-tray" "$user_home/.local/share/icons/vpn-egsys"
+            sudo cp "$SCRIPT_DIR/icons/"*.svg "$user_home/.local/share/icons/hicolor/scalable/apps/"
+            sudo chown -R "$u:$u" "$user_home/.local/bin/vpn-tray" "$user_home/.local/share/icons/vpn-egsys" "$user_home/.local/share/icons/hicolor"
             # Autostart
             cat > /tmp/vpn-tray-desktop.tmp <<DESKTOP
 [Desktop Entry]

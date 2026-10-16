@@ -103,8 +103,9 @@ def run_linux_tray():
     icon_disconnected = 'network-vpn-disconnected'
 
     theme = Gtk.IconTheme.get_default()
-    if not theme.has_icon('network-vpn'):
+    if not theme.has_icon(icon_connected):
         icon_connected = 'vpn-connected'
+    if not theme.has_icon(icon_disconnected):
         icon_disconnected = 'vpn-disconnected'
 
     class LinuxVPNTray:

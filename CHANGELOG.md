@@ -4,6 +4,19 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.2.6] - 2026-10-16
+
+### Corrigido
+- **Ícone da bandeja invisível no estado desconectado** — `vpn-tray` decidia o nome do ícone testando
+  apenas `theme.has_icon('network-vpn')`, o que mantinha `network-vpn-disconnected` (nome que **não
+  existe** no tema Breeze nem no `IconThemePath` do projeto). O item ficava sem ícone na bandeja do
+  Plasma exatamente quando não há túnel ativo, tornando impossível clicar para fazer login. Cada nome
+  passou a ser validado individualmente, com fallback para `vpn-connected`/`vpn-disconnected`.
+- **Ícones do projeto instalados no tema de usuário** — `install.sh`, `update.sh` e `user-setup.sh`
+  agora copiam `icons/*.svg` também para `~/.local/share/icons/hicolor/scalable/apps/`, além da cópia
+  plana em `~/.local/share/icons/vpn-egsys` usada pelo `IconThemePath` do SNI. Assim GTK e os hosts
+  StatusNotifier resolvem os ícones **por nome**, sem depender do caminho explícito do arquivo.
+
 ## [2.2.5] - 2026-10-13
 
 ### Corrigido

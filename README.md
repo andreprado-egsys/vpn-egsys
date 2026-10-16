@@ -20,6 +20,7 @@ Gerenciador universal de VPNs, monitor de bandeja (`vpn-tray`), utilitário de t
   sem IKEv1 (strongSwan ≥ 6 dos repositórios Arch/CachyOS) e reportam a causa exata do abortamento
   `IKE version 1 not supported` com a correção; `install.sh`/`update.sh` alertam sobre a ausência
   do IKEv1 e sobre o pin `IgnorePkg = strongswan` necessário para não perdê-lo em updates.
+- **Ícone da Bandeja Sempre Visível (v2.2.6)**: seleção de ícone validada nome a nome com fallback para os SVGs do próprio projeto, que agora também são instalados em `~/.local/share/icons/hicolor/scalable/apps/`. O item volta a aparecer na bandeja com o túnel caído, ou seja, dá para logar pela bandeja a partir do estado desconectado.
 - **Presets Estaduais Rápidos na Bandeja (`vpn-tray`)**: Configuração em um clique para Santa Catarina (SC), Tocantins (TO), Rondônia (RO), Paraná (PR) e Amazonas (AM).
 - **Interface Reativa Multi-Protocolo**: Alternância automática de visibilidade para campos de IPsec (Chave PSK e Rotas customizadas).
 - **Hardening Multi-Usuário (`SUDO_USER`)**: Execuções com `sudo` isolam o home do usuário real e inicializam a bandeja na sessão gráfica correta (sem rodar como root).

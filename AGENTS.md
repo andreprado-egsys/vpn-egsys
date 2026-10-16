@@ -41,3 +41,6 @@ IKEv2 swanctl) e compatibilidade cross-platform (**Linux** e **macOS**).
 - Tasks sanitizadas (padrão vpn-jira-sync): sem menções a IA/LLM/prompts, sem credenciais,
   sem dados sensíveis de cliente/empresa, sem URLs de repositório privado, sem caminhos internos.
   Ver skill `vpn-jira-sync`.
+
+## Door (gate):
+1. `./run_tests.sh`
