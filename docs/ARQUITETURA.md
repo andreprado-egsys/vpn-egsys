@@ -183,7 +183,8 @@ esp=aes256-sha256-modp1536!   # opcional (default do projeto)
 - **Linguagem**: Python 3
 - **GUI**: GTK 3 via PyGObject
 - **AppIndicator**: Ayatana AppIndicator 3
-- **Monitoramento**: subprocess + GLib timeout
+- **Monitoramento**: thread poller único (`_status_loop`, a cada 5s) + UI atualizada via
+  `GLib.idle_add` com callback retornando `False` [v2.2.7]
 
 **Arquitetura:**
 
@@ -241,7 +242,7 @@ sequenceDiagram
     T->>C: connect_vpn(id)
     C->>S: snxctl connect (perfil ativo em snx-rs.conf)
     S->>K: Cria interface snx-xfrm + rotas/DNS
-    T->>K: ip link show snx-xfrm (a cada 3s)
+    T->>K: ip link show snx-xfrm (a cada 5s, poller _status_loop)
     K-->>T: Interface existe
     T->>T: Atualiza status para ✓ Conectado
 ```

@@ -2,7 +2,7 @@
 
 Gerenciador universal de VPNs, monitor de bandeja (`vpn-tray`), utilitário de terminal (`vpn`) e integração com **Check Point (SNX via `snx-rs`)** e **IPsec (IKEv1 XAuth+PSK — padrão — / IKEv2 swanctl)** para estações **Linux** e **macOS**.
 
-## Novidades v2.2.0
+## Novidades v2.2 (2.2.0 → 2.2.7)
 - **Backend IPsec stroke IKEv1 XAuth+PSK (padrão)**: suporte real a gateways FortiGate (AM SSP); conexão sem depender do plugin strongSwan do NetworkManager (IKEv2-only), com materialização automática dos perfis em `/etc/ipsec.conf`/`ipsec.secrets` via helper `vpn-ipsec-apply` + sudoers NOPASSWD restrito.
 - **IKEv2 mantido via swanctl** (`ipsec-type=ikev2` gera `/etc/swanctl/conf.d/vpn-egsys.conf`).
 - **Confirmação de SA `INSTALLED`** antes de reportar túnel conectado.
