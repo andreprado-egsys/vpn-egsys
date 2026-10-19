@@ -2,7 +2,7 @@
 
 Gerenciador universal de VPNs, monitor de bandeja (`vpn-tray`), utilitário de terminal (`vpn`) e integração com **Check Point (SNX via `snx-rs`)** e **IPsec (IKEv1 XAuth+PSK — padrão — / IKEv2 swanctl)** para estações **Linux** e **macOS**.
 
-## Novidades v2.2 (2.2.0 → 2.2.7)
+## Novidades v2.2 (2.2.0 → 2.2.8)
 - **Backend IPsec stroke IKEv1 XAuth+PSK (padrão)**: suporte real a gateways FortiGate (AM SSP); conexão sem depender do plugin strongSwan do NetworkManager (IKEv2-only), com materialização automática dos perfis em `/etc/ipsec.conf`/`ipsec.secrets` via helper `vpn-ipsec-apply` + sudoers NOPASSWD restrito.
 - **IKEv2 mantido via swanctl** (`ipsec-type=ikev2` gera `/etc/swanctl/conf.d/vpn-egsys.conf`).
 - **Confirmação de SA `INSTALLED`** antes de reportar túnel conectado.
@@ -22,6 +22,7 @@ Gerenciador universal de VPNs, monitor de bandeja (`vpn-tray`), utilitário de t
   do IKEv1 e sobre o pin `IgnorePkg = strongswan` necessário para não perdê-lo em updates.
 - **Ícone da Bandeja Sempre Visível (v2.2.6)**: seleção de ícone validada nome a nome com fallback para os SVGs do próprio projeto, que agora também são instalados em `~/.local/share/icons/hicolor/scalable/apps/`. O item volta a aparecer na bandeja com o túnel caído, ou seja, dá para logar pela bandeja a partir do estado desconectado.
 - **Bandeja sem Fork Storm (v2.2.7)**: `check_status()` agora retorna `False` — em `GLib.idle_add`, `True` re-agenda o callback **para sempre**, e cada passo criava uma thread + `sudo vpn-ipsec-ctl stroke status`. Na estação Ubuntu isso virou ~5.500 chamadas sudo/minuto (19,7 M em 3 dias), 0% de CPU idle e load 85–95 em 12 cores, congelando os navegadores. Pós-correção medido: 12 chamadas/min, 14 forks/s, load 1,5. Shebang pinado em `/usr/bin/python3` (o `env python3` do PATH resolvia o linuxbrew, sem PyGObject) e regressão coberta por `tests/test_tray_idle.py` (AST: todo callback de `idle_add` deve retornar `False`).
+- **Bandeja Sempre no StatusNotifier (v2.2.8)**: `install.sh`/`update.sh` normalizam o `DBUS_SESSION_BUS_ADDRESS` antes de relançar o tray — a libdbus rejeita caminho puro (`/run/user/1000/bus`, sem `unix:path=`) em silêncio e o Ayatana cai para XEmbed, deixando o ícone sem menu D-Bus no KDE/Wayland. Agora: endereço válido passa direto, caminho puro ganha o prefixo e, sem a variável, os scripts constroem `unix:path=/run/user/<uid>/bus` do usuário real. Regressão `tests/test_tray_bus_env.py` e validação do ciclo Conectar/Desconectar por clique D-Bus em CachyOS/KDE Wayland (2 sudo/30s, 6 threads, ~67 MB RSS).
 - **Presets Estaduais Rápidos na Bandeja (`vpn-tray`)**: Configuração em um clique para Santa Catarina (SC), Tocantins (TO), Rondônia (RO), Paraná (PR) e Amazonas (AM).
 - **Interface Reativa Multi-Protocolo**: Alternância automática de visibilidade para campos de IPsec (Chave PSK e Rotas customizadas).
 - **Hardening Multi-Usuário (`SUDO_USER`)**: Execuções com `sudo` isolam o home do usuário real e inicializam a bandeja na sessão gráfica correta (sem rodar como root).

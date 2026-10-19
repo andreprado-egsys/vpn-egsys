@@ -4,6 +4,28 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.2.8] - 2026-10-19 (Jira PSEI-416)
+
+### Corrigido
+- **Endereço do bus de sessão no relançamento do `vpn-tray`** — `install.sh` e `update.sh` passavam
+  `DBUS_SESSION_BUS_ADDRESS` ao `sudo -u … nohup vpn-tray` sem validação. A libdbus rejeita
+  endereço sem o separador `:` (ex.: caminho puro `/run/user/1000/bus`) e o Ayatana cai para
+  XEmbed **sem erro visível** quando o stderr é descartado — o tray fica sem StatusNotifierItem
+  e o menu perde o acesso via D-Bus (KDE/Wayland). Os scripts agora compõem `BUS_ADDR`: validam o
+  variável da sessão (passagem direta se contiver `:`), prefixam `unix:path=` em caminho puro e,
+  na ausência da variável, constroem `unix:path=/run/user/<uid>/bus` do usuário real (`SUDO_USER`).
+
+### Adicionado
+- **`tests/test_tray_bus_env.py`** — regressão do normalizador: contrato textual nos dois scripts
+  (bloco antes do `nohup`) e execução real do bloco em bash para os três casos (caminho puro →
+  prefixo, endereço válido → intocado, ausente → construído do runtime dir). Suíte: 48 testes.
+
+### Validado
+- **PSEI-416 (fork storm) em estação CachyOS/KDE Wayland**: ciclo Conectar → Desconectar →
+  Conectar disparado por clique D-Bus real no menu da bandeja — 2 processos `sudo` em 30 s
+  (~4/min do poller de 5 s, vs ~5.500/min observados no Ubuntu pré-fix), tray estável em
+  6 threads e ~67 MB de RSS. Qualidade: gate 48/48.
+
 ## [2.2.7] - 2026-10-19 (Jira PSEI-416)
 
 ### Corrigido

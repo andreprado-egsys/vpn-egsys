@@ -30,6 +30,7 @@ vpn-egsys/
 │   ├── test_vpn_manager.py
 │   ├── test_cli.py
 │   ├── test_tray_idle.py   # Regressão GLib.idle_add (fork storm, v2.2.7)
+│   ├── test_tray_bus_env.py # Regressão unix:path= no relançamento do tray (v2.2.8)
 │   └── test_security_pentest.py # Suíte de Pentest Black Box (ACH-VPN-001 a 010)
 │
 ├── macos/                 # Utilitários e serviços dedicados para macOS
@@ -540,7 +541,7 @@ sudo /usr/lib/vpn-egsys/vpn-ipsec-apply              # reaplica blocos gerenciad
 ipsec statusall | grep -E 'vpn.*INSTALLED'           # SA instalada (formato com chaves)
 ```
 
-### Testes Automatizados (Vigentes — suíte de 44 testes)
+### Testes Automatizados (Vigentes — suíte de 48 testes)
 
 O Quality Gate do projeto é o runner `./run_tests.sh` (obrigatório antes de qualquer commit):
 
@@ -548,7 +549,7 @@ O Quality Gate do projeto é o runner `./run_tests.sh` (obrigatório antes de qu
 ./run_tests.sh
 # 1. bash -n            — sintaxe de todos os scripts shell
 # 2. python -m py_compile — todos os módulos Python (core, vpn, vpn-tray, helpers)
-# 3. python -m unittest discover -s tests — 44 testes (28 unit + 10 pentest + 3 CLI + 3 bandeja)
+# 3. python -m unittest discover -s tests — 48 testes (28 unit + 10 pentest + 3 CLI + 7 bandeja)
 ```
 
 #### Estrutura da suíte (`tests/`)
@@ -559,6 +560,7 @@ O Quality Gate do projeto é o runner `./run_tests.sh` (obrigatório antes de qu
 | `test_security_pentest.py` | Matriz ACH-VPN-001..010 (injeção de comando/CRLF/path traversal, 0600, varredura de secrets incluindo `vpn-ipsec-apply`, proibição de `shell=True`, payload gigante, CLI, plist) |
 | `test_cli.py` | Parser do `vpn`: aliases de atalho, validação de ID, `list`/`status` |
 | `test_tray_idle.py` | Regressão v2.2.7 via AST: todo callback registrado em `GLib.idle_add(self.X)` deve retornar `False` (negação do fork storm) e o shebang do `vpn-tray` deve pinar `/usr/bin/python3` |
+| `test_tray_bus_env.py` | Regressão v2.2.8: `install.sh`/`update.sh` normalizam `DBUS_SESSION_BUS_ADDRESS` (prefixo `unix:path=` em caminho puro, fallback `/run/user/<uid>/bus`) antes do `nohup` do tray — contrato textual + execução real do bloco em bash |
 
 #### Rodando isoladamente
 
@@ -566,6 +568,7 @@ O Quality Gate do projeto é o runner `./run_tests.sh` (obrigatório antes de qu
 python3 -m unittest tests.test_vpn_manager -v
 python3 -m unittest tests.test_security_pentest -v
 python3 -m unittest tests.test_tray_idle -v
+python3 -m unittest tests.test_tray_bus_env -v
 ```
 
 > Os testes de backend usam `@patch` em `core.vpn_manager.run_sudo`/`shutil.which` e nunca tocam

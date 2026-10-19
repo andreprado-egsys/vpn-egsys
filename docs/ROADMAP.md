@@ -51,6 +51,7 @@ Prover aos times de engenharia, DevOps e suporte N1/N2/N3 uma plataforma corpora
 - [x] `update.sh` (bloco 10b) provisiona helpers + sudoers + `strongswan-starter` — fluxo do analista `git clone`/`git pull && ./update.sh` com cobertura 100% em máquina já instalada.
 - [x] Suíte expandida para 41 testes (renderizadores, escapes, statusall real, cobertura de rotas, idempotência de marcadores, fallback sem ctl).
 - [x] **Fork storm da bandeja eliminado (v2.2.7)**: `check_status()` retorna `False` (retorno `True` em `GLib.idle_add` re-agendava o callback para sempre: ~5.500 chamadas sudo/min, load 85–95 em 12 cores em estação Ubuntu); shebang pinado em `/usr/bin/python3`; regressão `tests/test_tray_idle.py` (AST) — suíte 44 testes.
+- [x] **Bus de sessão normalizado no relançamento da bandeja (v2.2.8)**: `install.sh`/`update.sh` compõem `DBUS_SESSION_BUS_ADDRESS` com `unix:path=` (caminho puro é rejeitado em silêncio pela libdbus e o Ayatana cai para XEmbed sem StatusNotifier no KDE/Wayland), com fallback `unix:path=/run/user/<uid>/bus` do usuário real; regressão `tests/test_tray_bus_env.py` (contrato textual + execução do bloco) — suíte 48 testes. PSEI-416 revalidado em CachyOS/KDE Wayland: ciclo Conectar/Desconectar por clique D-Bus com 2 `sudo`/30s, 6 threads, ~67 MB RSS.
 
 ### Fase 3: Segurança Avançada & Integração com Keyring (Planejada - Q4 2026)
 - [ ] **Integração com Keyring do Sistema**:

@@ -547,6 +547,28 @@ awk '/processes/{print $2}' /proc/stat         # 2 amostras com 5s de delta → 
 **Solução:** `git pull && ./update.sh` (v2.2.7+). Enquanto o fix não chegar: mate o processo
 (`kill $(pgrep -f 'vpn-tray$')`) — o poller de 5 s é o único responsável pelo status normal.
 
+**Revalidação (v2.2.8, estação CachyOS/KDE Wayland):** ciclo Conectar → Desconectar → Conectar
+disparado por clique D-Bus real no menu da bandeja — 2 processos `sudo` em 30 s (~4/min do
+poller de 5 s), tray estável em 6 threads e ~67 MB de RSS. O fix é agnóstico de distribuição.
+
+### Problema: ícone na bandeja sem menu / tray registrado só via XEmbed (v2.2.8)
+
+**Sintoma:** o `vpn-tray` aparece no painel mas não há item `vpn_monitor` no
+`org.kde.StatusNotifierWatcher` (`gdbus call --session --dest org.kde.StatusNotifierWatcher
+--object-path /StatusNotifierWatcher --method org.freedesktop.DBus.Properties.Get
+org.kde.StatusNotifierWatcher RegisteredStatusNotifierItems`); o processo tem conexão apenas
+com o X11/Xwayland, nunca com o bus de sessão.
+
+**Causa:** `DBUS_SESSION_BUS_ADDRESS` sem o separador `:` (ex.: caminho puro
+`/run/user/1000/bus`). A libdbus rejeita o endereço **em silêncio** quando o stderr vai para
+`/dev/null` (caso do `nohup` dos scripts) e o Ayatana cai para o protocolo XEmbed legado —
+sem StatusNotifierItem, o menu fica inacessível via D-Bus e frágil sob KDE/Wayland.
+
+**Solução:** `git pull && ./update.sh` (v2.2.8+): os scripts normalizam o endereço
+(prefixando `unix:path=` em caminho puro e construindo `unix:path=/run/user/<uid>/bus` quando
+a variável não existe no ambiente do `sudo`). Para diagnóstico manual, copie o valor real da
+sessão: `tr '\0' '\n' < /proc/$(pgrep -x plasmashell | head -1)/environ | grep DBUS`.
+
 ### Problema: `ModuleNotFoundError: No module named 'gi'` ao iniciar o vpn-tray
 
 **Causa:** o shebang antigo `#!/usr/bin/env python3` resolve para o python do **linuxbrew**

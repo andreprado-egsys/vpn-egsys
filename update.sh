@@ -380,8 +380,17 @@ fi
 
 # --- 13. Reiniciar tray ---
 pkill -f "vpn-tray" 2>/dev/null || true
+# libdbus rejeita endereço sem separador ":" (ex.: /run/user/1000/bus) em silêncio —
+# o tray cai para XEmbed e fica sem StatusNotifier (sem menu clicável via D-Bus no KDE).
+BUS_ADDR="${DBUS_SESSION_BUS_ADDRESS:-}"
+TARGET_UID=$(id -u "$TARGET_USER" 2>/dev/null || id -u)
+if [ -z "$BUS_ADDR" ]; then
+    BUS_ADDR="unix:path=/run/user/${TARGET_UID}/bus"
+elif [[ "$BUS_ADDR" != *:* ]]; then
+    BUS_ADDR="unix:path=${BUS_ADDR}"
+fi
 if [ -n "$SUDO_USER" ]; then
-    sudo -u "$TARGET_USER" DISPLAY="${DISPLAY:-:0}" DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS}" nohup "$LOCAL_BIN/vpn-tray" > /dev/null 2>&1 &
+    sudo -u "$TARGET_USER" DISPLAY="${DISPLAY:-:0}" DBUS_SESSION_BUS_ADDRESS="$BUS_ADDR" nohup "$LOCAL_BIN/vpn-tray" > /dev/null 2>&1 &
 else
     nohup "$LOCAL_BIN/vpn-tray" > /dev/null 2>&1 &
 fi

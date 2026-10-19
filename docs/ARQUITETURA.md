@@ -354,6 +354,12 @@ Invariantes de callback GLib [v2.2.7] — cobertos por tests/test_tray_idle.py:
     atualização única — o poller _status_loop é o único dono do ciclo de status
   · shebang do vpn-tray pinado em /usr/bin/python3 (env python3 no PATH da
     sessão resolve o linuxbrew, que não tem PyGObject → import gi falha)
+  · [v2.2.8] install.sh/update.sh normalizam DBUS_SESSION_BUS_ADDRESS antes do
+    nohup do tray (coberto por tests/test_tray_bus_env.py): a libdbus rejeita
+    endereço sem ":" (caminho puro) em silêncio e o Ayatana cai para XEmbed —
+    sem StatusNotifierItem, o menu fica inacessível via D-Bus no KDE/Wayland;
+    caminho puro recebe prefixo unix:path= e, sem a variável, os scripts
+    constroem unix:path=/run/user/<uid-alvo>/bus
 
 run_linux_tray(): RLIMIT_NOFILE elevado a 8192 (v2.2.4) — evita exaustão de fds
 quando subprocessos de status são criados em ciclo
