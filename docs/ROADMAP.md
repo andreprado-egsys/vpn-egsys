@@ -30,7 +30,7 @@ Prover aos times de engenharia, DevOps e suporte N1/N2/N3 uma plataforma corpora
 - [x] Formalização das diretrizes operacionais de governança com [`AGENTS.md`](../AGENTS.md) e tríade de skills (`vpn-commit`, `vpn-docs-sync`, `vpn-jira-sync`).
 
 ### Fase 2.1: Pentest Black Box, Presets Estaduais & Hardening Multi-Usuário (Concluída - v2.1.1)
-- [x] Bateria de Pentest Defensivo Black Box (ACH-VPN-001 a ACH-VPN-010) com 18/18 testes verdes no Quality Gate (total vigente após a Fase 2.2: 41 testes).
+- [x] Bateria de Pentest Defensivo Black Box (ACH-VPN-001 a ACH-VPN-010) com 18/18 testes verdes no Quality Gate (total vigente após a v2.2.7: 44 testes).
 - [x] Diálogo gráfico com Presets Rápidos de Estados (SC, TO, RO, PR, AM) e alternância reativa de campos IPsec no `vpn-tray`.
 - [x] Hardening Multi-Usuário com resolução de `$SUDO_USER`, permissão `0600`, e autostart sem root.
 - [x] Documento de governança de segurança [`docs/SECURITY.md`](SECURITY.md).
@@ -50,6 +50,7 @@ Prover aos times de engenharia, DevOps e suporte N1/N2/N3 uma plataforma corpora
 - [x] **Paridade IKEv1 entre distribuições (v2.2.5)**: `charon_ikev1_missing()` no core detecta libcharon sem `task_manager_v1` (strongSwan ≥ 6 do Arch/CachyOS) e o `vpn`/tray devolvem a causa real do `IKE version 1 not supported`; guard de pacman no `install.sh`/`update.sh` avisa quando falta o IKEv1 ou quando o `IgnorePkg = strongswan` não está pinado; guia `docs/IPSEC.md` documenta o rebuild `--enable-ikev1`. Validado em host Arch/CachyOS com `strongswan 6.1.0-2.1`.
 - [x] `update.sh` (bloco 10b) provisiona helpers + sudoers + `strongswan-starter` — fluxo do analista `git clone`/`git pull && ./update.sh` com cobertura 100% em máquina já instalada.
 - [x] Suíte expandida para 41 testes (renderizadores, escapes, statusall real, cobertura de rotas, idempotência de marcadores, fallback sem ctl).
+- [x] **Fork storm da bandeja eliminado (v2.2.7)**: `check_status()` retorna `False` (retorno `True` em `GLib.idle_add` re-agendava o callback para sempre: ~5.500 chamadas sudo/min, load 85–95 em 12 cores em estação Ubuntu); shebang pinado em `/usr/bin/python3`; regressão `tests/test_tray_idle.py` (AST) — suíte 44 testes.
 
 ### Fase 3: Segurança Avançada & Integração com Keyring (Planejada - Q4 2026)
 - [ ] **Integração com Keyring do Sistema**:

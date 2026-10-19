@@ -4,6 +4,27 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.2.7] - 2026-10-19 (Jira PSEI-416)
+
+### Corrigido
+- **Fork storm no `vpn-tray` (regressão 2.2.6)** — `check_status()` retornava `True` e era
+  registrado via `GLib.idle_add(self.check_status)` em `_async_connect`/`_async_disconnect`.
+  Em GLib, callback de *idle* retornando `True` **re-agenda o source para sempre**: a cada passo
+  do main loop era criada uma thread que chamava `get_active_vpn()` → `sudo vpn-ipsec-ctl
+  stroke status`. Resultado observado na estação Ubuntu: **~5.500 chamadas sudo/minuto**
+  (19,7 M em 3 dias, `auth.log`), ~2.700 forks/s, 0% de CPU idle e load 85–95 em 12 cores —
+  máquina inutilizável e navegadores congelados. `check_status()` agora retorna `False`
+  (execução única; o poller `_status_loop` de 5 s continua dono da UI). Pós-fix medido:
+  12 chamadas/min, 14 forks/s, load 1,5.
+- **Shebang do `vpn-tray` pinado em `/usr/bin/python3`** — `#!/usr/bin/env python3` resolvia
+  para o python do linuxbrew (presente no PATH da sessão) que não tem PyGObject, quebrando
+  `import gi` no autostart. O `plist` do macOS continua usando `/usr/local/bin/python3`
+  explicitamente, então não há efeito no macOS.
+
+### Adicionado
+- **`tests/test_tray_idle.py`** — regressão estática (AST): todo callback registrado em
+  `GLib.idle_add(self.X)` deve retornar `False`, e o shebang deve pinar o python do sistema.
+
 ## [2.2.6] - 2026-10-16
 
 ### Corrigido

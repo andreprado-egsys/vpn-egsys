@@ -204,9 +204,10 @@ class VPNTray:
     ├── get_active_vpn()
     │   ├── check ip link show snx-xfrm
     │   └── check ps aux para processo snx-rs
-    ├── check_status() / _status_loop() [v2.2.4]
+    ├── check_status() / _status_loop() [v2.2.4, corrigido em v2.2.7]
     │   ├── thread poller único (daemon) a cada 5s — GetLayout do painel nunca bloqueia
     │   ├── Atualiza ícone (vpn-connected/vpn-disconnected) via GLib.idle_add
+    │   ├── check_status() retorna False (v2.2.7) — retorno True em idle_add = fork storm
     │   └── Atualiza título e label de status
     ├── on_connect() / _async_connect() [v2.2.2]
     │   ├── threading.Thread(daemon=True) — conexão assíncrona não-bloqueante
@@ -215,6 +216,9 @@ class VPNTray:
     │   │   ├── SNX   → snxctl connect (daemon command mode) + nmcli up <label>
     │   │   └── IPsec → vpn-ipsec-apply → vpn-ipsec-ctl stroke/swanctl up [v2.2.4]
     │   ├── GLib.idle_add(self.check_status) — atualização segura da UI
+    │   │   └── check_status() retorna **False** [v2.2.7] — em idle_add, True re-agenda
+    │   │       o source para sempre e gerava fork storm (thread + sudo stroke status
+    │   │       por passo; ~5.500 chamadas/min na estação Ubuntu)
     │   └── notify-send — notificação nativa no desktop
     ├── on_disconnect() / _async_disconnect() [v2.2.2]
     │   ├── threading.Thread(daemon=True) — desconexão assíncrona
@@ -341,6 +345,14 @@ threading.Thread(_status_loop, daemon=True)  — poller único de longa duraçã
           ├── indicator.set_icon_full()
           ├── indicator.set_title()
           └── status_item.set_label()
+
+Invariantes de callback GLib [v2.2.7] — cobertos por tests/test_tray_idle.py:
+  · todo callback registrado em GLib.idle_add(self.X) DEVE retornar False
+    (True mantém o source ativo e o GLib o re-invoca continuamente)
+  · check_status() é disparado por _async_connect/_async_disconnect como
+    atualização única — o poller _status_loop é o único dono do ciclo de status
+  · shebang do vpn-tray pinado em /usr/bin/python3 (env python3 no PATH da
+    sessão resolve o linuxbrew, que não tem PyGObject → import gi falha)
 
 run_linux_tray(): RLIMIT_NOFILE elevado a 8192 (v2.2.4) — evita exaustão de fds
 quando subprocessos de status são criados em ciclo

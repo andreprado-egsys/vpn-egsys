@@ -525,6 +525,38 @@ O Ayatana AppIndicator pode não funcionar corretamente no Wayland. Tente:
 - Usar X11 (logar com Xorg)
 - Instalar `gnome-shell-extension-appindicator`
 
+### Problema: estação lenta / load altíssimo com a bandeja aberta (fork storm — v2.2.7)
+
+**Sintoma:** `load average` na casa das dezenas (ex.: 85–95 em 12 cores), CPU em ~0% idle,
+navegadores congelados e crescimento contínuo de processos `sudo … vpn-ipsec-ctl stroke status`.
+
+**Causa (regressão 2.2.6, corrigida na 2.2.7):** `check_status()` retornava `True` e era
+registrado via `GLib.idle_add(self.check_status)`. Em GLib, callback de *idle* retornando `True`
+**re-agenda o source para sempre** — cada passo do main loop criava uma thread que chamava
+`get_active_vpn()` → `sudo vpn-ipsec-ctl stroke status`. Medido na estação Ubuntu: ~5.500
+chamadas sudo/minuto (19,7 M em 3 dias), ~2.700 forks/s.
+
+**Diagnóstico:**
+```bash
+grep -c 'stroke status' /var/log/auth.log      # deve crescer ~12/min (poller de 5s)
+grep Threads /proc/$(pgrep -f 'vpn-tray$' | head -1)/status
+ps --ppid $(pgrep -f 'vpn-tray$' | head -1) --no-headers | wc -l
+awk '/processes/{print $2}' /proc/stat         # 2 amostras com 5s de delta → forks/s
+```
+
+**Solução:** `git pull && ./update.sh` (v2.2.7+). Enquanto o fix não chegar: mate o processo
+(`kill $(pgrep -f 'vpn-tray$')`) — o poller de 5 s é o único responsável pelo status normal.
+
+### Problema: `ModuleNotFoundError: No module named 'gi'` ao iniciar o vpn-tray
+
+**Causa:** o shebang antigo `#!/usr/bin/env python3` resolve para o python do **linuxbrew**
+(quando `~/.linuxbrew/bin` está antes de `/usr/bin` no `PATH` da sessão), que não tem
+PyGObject. Desde a v2.2.7 o shebang é `#!/usr/bin/python3`.
+
+**Solução:** `git pull && ./update.sh` (recopia `vpn-tray` para `~/.local/bin/`). Ou iniciar
+explicitamente com o interpretador do sistema: `/usr/bin/python3 ~/.local/bin/vpn-tray`.
+No macOS nada muda: o LaunchAgent invoca `$(which python3)` explicitamente no `plist`.
+
 ### Problema: Permissão negada ao executar snx-rs
 
 **Causa:** O sudoers não foi configurado corretamente.

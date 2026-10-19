@@ -29,6 +29,7 @@ vpn-egsys/
 ├── tests/                 # Bateria de testes automatizados
 │   ├── test_vpn_manager.py
 │   ├── test_cli.py
+│   ├── test_tray_idle.py   # Regressão GLib.idle_add (fork storm, v2.2.7)
 │   └── test_security_pentest.py # Suíte de Pentest Black Box (ACH-VPN-001 a 010)
 │
 ├── macos/                 # Utilitários e serviços dedicados para macOS
@@ -280,8 +281,18 @@ class VPNTray:
         self.indicator = AyatanaAppIndicator3.Indicator.new_with_path(...)
         self.vpns = discover_vpns()
         self.build_menu()
-        GLib.timeout_add_seconds(3, self.check_status)
-        self.check_status()
+        # v2.2.4+: poller único em thread daemon (antes: GLib.timeout_add_seconds(3, ...))
+        threading.Thread(target=self._status_loop, daemon=True).start()
+
+    def _status_loop(self):
+        """Poller único de longa duração — a cada 5s chama get_active_vpn()."""
+        while getattr(self, '_poll_running', True):
+            try:
+                active = get_active_vpn()
+                GLib.idle_add(self._apply_status, active)
+            except Exception:
+                pass
+            time.sleep(5)
 
     def discover_vpns(self):
         """Descobre VPNs em ~/.config/snx-rs/."""
@@ -306,10 +317,11 @@ class VPNTray:
         # Retorna label da VPN ou None
 
     def check_status(self):
-        """Verifica e atualiza status."""
-        # Chamado a cada 3 segundos
-        # Atualiza ícone e título
-        # Retorna True para continuar
+        """Verifica e atualiza status (chamado pós-conectar/desconectar)."""
+        # Cria thread daemon que chama get_active_vpn() em background
+        # Atualiza ícone e título na thread Gtk via GLib.idle_add(_apply_status)
+        # Retorna False (v2.2.7): em GLib.idle_add, True re-agenda o callback
+        # para sempre e gerava fork storm (thread + subprocesso sudo por passo)
 
     def on_connect(self, widget, key):
         """Conecta à VPN."""
@@ -334,6 +346,8 @@ import subprocess
 import os
 import signal
 import glob
+import threading
+import time
 
 gi.require_version('Gtk', '3.0')
 gi.require_version('AyatanaAppIndicator3', '0.1')
@@ -352,7 +366,8 @@ SNX_RS = '/usr/bin/snx-rs'
 
 - Usar `subprocess` para comandos shell
 - Tratar exceções com try/except
-- Usar GLib.timeout para agendamento
+- Usar GLib.timeout para agendamento; **callbacks de `GLib.idle_add` sempre retornam `False`**
+  (`True` re-agenda o source para sempre — em `check_status()` isso gerava fork storm, v2.2.7)
 - Expandir paths com `os.path.expanduser`
 - Usar `signal.signal(signal.SIGINT, signal.SIG_DFL)` para Ctrl+C
 
@@ -525,7 +540,7 @@ sudo /usr/lib/vpn-egsys/vpn-ipsec-apply              # reaplica blocos gerenciad
 ipsec statusall | grep -E 'vpn.*INSTALLED'           # SA instalada (formato com chaves)
 ```
 
-### Testes Automatizados (Vigentes — suíte de 41 testes)
+### Testes Automatizados (Vigentes — suíte de 44 testes)
 
 O Quality Gate do projeto é o runner `./run_tests.sh` (obrigatório antes de qualquer commit):
 
@@ -533,7 +548,7 @@ O Quality Gate do projeto é o runner `./run_tests.sh` (obrigatório antes de qu
 ./run_tests.sh
 # 1. bash -n            — sintaxe de todos os scripts shell
 # 2. python -m py_compile — todos os módulos Python (core, vpn, vpn-tray, helpers)
-# 3. python -m unittest discover -s tests — 41 testes (28 unitários + 10 pentest + 3 CLI)
+# 3. python -m unittest discover -s tests — 44 testes (28 unit + 10 pentest + 3 CLI + 3 bandeja)
 ```
 
 #### Estrutura da suíte (`tests/`)
@@ -543,12 +558,14 @@ O Quality Gate do projeto é o runner `./run_tests.sh` (obrigatório antes de qu
 | `test_vpn_manager.py` | Parsing/escrita de perfis, sanitização, renderizadores stroke/swanctl (`render_stroke_block`, `render_secrets_block`, `render_swanctl_block`), idempotência de marcadores `BEGIN/END vpn-egsys`, `connect/disconnect_ipsec_linux` com `run_sudo` mockado (apply→up→poll SA `INSTALLED`), parse real do `statusall` (chaves `conn{n}:`), `installed_remote_ts` + `missing_released_routes` (aviso de TS reduzido pelo gateway) |
 | `test_security_pentest.py` | Matriz ACH-VPN-001..010 (injeção de comando/CRLF/path traversal, 0600, varredura de secrets incluindo `vpn-ipsec-apply`, proibição de `shell=True`, payload gigante, CLI, plist) |
 | `test_cli.py` | Parser do `vpn`: aliases de atalho, validação de ID, `list`/`status` |
+| `test_tray_idle.py` | Regressão v2.2.7 via AST: todo callback registrado em `GLib.idle_add(self.X)` deve retornar `False` (negação do fork storm) e o shebang do `vpn-tray` deve pinar `/usr/bin/python3` |
 
 #### Rodando isoladamente
 
 ```bash
 python3 -m unittest tests.test_vpn_manager -v
 python3 -m unittest tests.test_security_pentest -v
+python3 -m unittest tests.test_tray_idle -v
 ```
 
 > Os testes de backend usam `@patch` em `core.vpn_manager.run_sudo`/`shutil.which` e nunca tocam

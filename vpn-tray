@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """
 vpn-tray - Monitor Universal de VPN (SNX & IPsec) na bandeja do sistema.
 Compatível com Linux (Gtk / AyatanaAppIndicator) e macOS (pystray / AppKit nativo).
@@ -202,8 +202,10 @@ def run_linux_tray():
         def check_status(self):
             # chamado pós-conectar/desconectar: o poller dedicado já cuida da UI;
             # uma verificação imediata em thread mantém o main loop livre.
+            # return False é obrigatório: em GLib.idle_add, True re-agenda o source
+            # para sempre (loop infinito de threads/subprocessos — fork storm).
             threading.Thread(target=self._async_status, daemon=True).start()
-            return True
+            return False
 
         def _status_loop(self):
             while getattr(self, '_poll_running', True):

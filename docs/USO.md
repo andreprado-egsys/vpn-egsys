@@ -218,7 +218,7 @@ Ao clicar no ícone, o seguinte menu é exibido:
 1. Clique no ícone da bandeja.
 2. Selecione a VPN desejada (ex: `[IPsec] Conectar VPN AMSSP` ou `[SNX] Conectar VPN RO`).
 3. O status exibirá imediatamente `⌛ Conectando [VPN]...` sem travar a interface.
-4. Ao concluir, o ícone atualiza via `GLib.idle_add` e o desktop emite notificação via `notify-send`.
+4. Ao concluir, o ícone atualiza via `GLib.idle_add` (callback `check_status()` retorna `False` desde a v2.2.7 — ver `docs/ARQUITETURA.md` §3) e o desktop emite notificação via `notify-send`.
 
 #### Desconectar
 1. Clique no ícone da bandeja.
