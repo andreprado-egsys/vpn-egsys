@@ -33,6 +33,10 @@
   para `~/.local/bin` — sem o fix na fonte, o próximo `update.sh` reverteria a correção (fix já
   aplicado na fonte nesta sessão).
 
+- **Ajuste de débito (2ª passada, 19/10 `d78faf0`):** fluxo do tray em `docs/ARQUITETURA.md` corrigido
+  de 3s para 5s (poller `_status_loop`) e monitoramento descrito como thread + `idle_add(False)`;
+  título "Novidades v2.2.0" do README alinhado para "Novidades v2.2 (2.2.0 → 2.2.7)".
+
 ## 2026-10-13 — v2.2.4 · Wrapper `vpn-ipsec-ctl`, bandeja à prova de congelamento, modelo byte-a-byte
 - **sudo-rs 0.2.8 não casa coringa de argumento — nunca** (teste de isolamento com regra única
   `ipsec down *`); o "glob puro" da v2.2.3 foi provado inviável. Sudoers vigente: **dois caminhos
