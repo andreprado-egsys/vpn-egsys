@@ -361,6 +361,19 @@ Invariantes de callback GLib [v2.2.7] — cobertos por tests/test_tray_idle.py:
     caminho puro recebe prefixo unix:path= e, sem a variável, os scripts
     constroem unix:path=/run/user/<uid-alvo>/bus
 
+Ambiente gráfico do vpn-tray [v2.2.9] — cobertos por tests/test_tray_wayland_env.py:
+  · setup_display() resolve XDG_RUNTIME_DIR a partir do uid (/run/user/<uid>) quando a
+    variável não chega ao processo (autostart, sudo -u, shell limpo)
+  · WAYLAND_DISPLAY é descoberto pelos sockets wayland-* do runtime dir; arquivos
+    terminados em .lock são semáforos do compositor, não sockets, e são ignorados
+  · o abortamento "Nenhum display encontrado" exige a AUSÊNCIA de DISPLAY e de
+    WAYLAND_DISPLAY — sessão KDE Wayland sem Xwayland é ambiente válido
+  · valores já presentes no ambiente nunca são sobrescritos pela autodetecção
+  · o StatusNotifierItem é registrado como f'vpn-monitor-{uid}': id fixo ('vpn-monitor')
+    fazia o segundo usuário da mesma estação perder o ícone no watcher do KDE
+  · ICON_DIR é anexado ao Gtk.IconTheme (append_search_path) ANTES do primeiro
+    has_icon(), então o SVG do projeto resolve sem depender da cópia em hicolor/
+
 run_linux_tray(): RLIMIT_NOFILE elevado a 8192 (v2.2.4) — evita exaustão de fds
 quando subprocessos de status são criados em ciclo
 ```
@@ -485,8 +498,9 @@ password=base64_encoded_string
 |----------|--------------|-----------|
 | `HOME` | `/home/user` | Localização de arquivos de configuração |
 | `PATH` | - | Include `~/.local/bin` |
-| `DISPLAY` | `:0` | Display X11 para GTK |
-| `XDG_RUNTIME_DIR` | `/run/user/{uid}` | Runtime directory |
+| `DISPLAY` | `:0` | Display X11 para GTK (autodetectado em `/tmp/.X11-unix/`) |
+| `WAYLAND_DISPLAY` | `wayland-0` | Sessão Wayland; descoberta em `XDG_RUNTIME_DIR` [v2.2.9] |
+| `XDG_RUNTIME_DIR` | `/run/user/{uid}` | Runtime directory (deduzido do uid quando ausente) |
 
 ### Arquivos de Estado
 

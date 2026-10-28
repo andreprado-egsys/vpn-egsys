@@ -541,7 +541,7 @@ sudo /usr/lib/vpn-egsys/vpn-ipsec-apply              # reaplica blocos gerenciad
 ipsec statusall | grep -E 'vpn.*INSTALLED'           # SA instalada (formato com chaves)
 ```
 
-### Testes Automatizados (Vigentes — suíte de 48 testes)
+### Testes Automatizados (Vigentes — suíte de 56 testes)
 
 O Quality Gate do projeto é o runner `./run_tests.sh` (obrigatório antes de qualquer commit):
 
@@ -549,7 +549,7 @@ O Quality Gate do projeto é o runner `./run_tests.sh` (obrigatório antes de qu
 ./run_tests.sh
 # 1. bash -n            — sintaxe de todos os scripts shell
 # 2. python -m py_compile — todos os módulos Python (core, vpn, vpn-tray, helpers)
-# 3. python -m unittest discover -s tests — 48 testes (28 unit + 10 pentest + 3 CLI + 7 bandeja)
+# 3. python -m unittest discover -s tests — 56 testes (29 unit + 10 pentest + 3 CLI + 14 bandeja)
 ```
 
 #### Estrutura da suíte (`tests/`)
@@ -561,6 +561,7 @@ O Quality Gate do projeto é o runner `./run_tests.sh` (obrigatório antes de qu
 | `test_cli.py` | Parser do `vpn`: aliases de atalho, validação de ID, `list`/`status` |
 | `test_tray_idle.py` | Regressão v2.2.7 via AST: todo callback registrado em `GLib.idle_add(self.X)` deve retornar `False` (negação do fork storm) e o shebang do `vpn-tray` deve pinar `/usr/bin/python3` |
 | `test_tray_bus_env.py` | Regressão v2.2.8: `install.sh`/`update.sh` normalizam `DBUS_SESSION_BUS_ADDRESS` (prefixo `unix:path=` em caminho puro, fallback `/run/user/<uid>/bus`) antes do `nohup` do tray — contrato textual + execução real do bloco em bash |
+| `test_tray_wayland_env.py` | Regressão v2.2.9: extrai `setup_display()` do `vpn-tray` por AST e o executa sobre FS sintético — deriva `XDG_RUNTIME_DIR` do uid, descobre `WAYLAND_DISPLAY` ignorando `*.lock`, mantém valores pré-existentes, aborta só sem X11 **e** sem Wayland; mais o contrato do id `vpn-monitor-<uid>` e do `append_search_path(ICON_DIR)` anterior ao primeiro `has_icon()` |
 
 #### Rodando isoladamente
 

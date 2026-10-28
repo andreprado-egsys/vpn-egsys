@@ -569,6 +569,34 @@ sem StatusNotifierItem, o menu fica inacessível via D-Bus e frágil sob KDE/Way
 a variável não existe no ambiente do `sudo`). Para diagnóstico manual, copie o valor real da
 sessão: `tr '\0' '\n' < /proc/$(pgrep -x plasmashell | head -1)/environ | grep DBUS`.
 
+### Problema: `vpn-tray` não inicia em sessão Wayland pura (v2.2.9)
+
+**Sintoma:** `ERRO: Nenhum display encontrado. Execute dentro de uma sessão gráfica.` mesmo
+com o KDE Wayland de pé, ou o tray roda mas não aparece nenhum item dele na bandeja quando um
+segundo usuário também tem o monitor aberto.
+
+**Causa:** até a v2.2.8 o `setup_display()` só procurava X11 (`/tmp/.X11-unix/X*`) e abortava
+sem `DISPLAY`. Em relançamento fora da sessão (`autostart`, `sudo -u … nohup`, shell limpo) as
+variáveis não chegam ao processo. Soma-se o id fixo `vpn-monitor` no `StatusNotifierItem`: o
+watcher do KDE aceita um registro por id, e o tray do segundo usuário fica de fora.
+
+**Solução:** `git pull && ./update.sh` (v2.2.9+). O tray passa a deduzir `XDG_RUNTIME_DIR` do
+uid (`/run/user/<uid>`), a descobrir `WAYLAND_DISPLAY` pelos sockets `wayland-*` desse diretório
+(sem confundir com os semáforos `wayland-*.lock`) e a registrar o item como
+`vpn-monitor-<uid>`; o abortamento agora exige a ausência de X11 **e** de Wayland.
+Confirmação manual, na sessão:
+
+```bash
+tr '\0' '\n' < /proc/$(pgrep -u "$USER" -f '\.local/bin/vpn-tray' | head -1)/environ \
+  | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS)='
+gdbus call --session --dest org.kde.StatusNotifierWatcher \
+  --object-path /StatusNotifierWatcher \
+  --method org.freedesktop.DBus.Properties.Get org.kde.StatusNotifierWatcher \
+  RegisteredStatusNotifierItems | tr ',' '\n' | grep vpn-monitor
+```
+
+Deve listar `wayland-<n>` no ambiente e exatamente um `:.../vpn-monitor-<uid>` por usuário.
+
 ### Problema: `ModuleNotFoundError: No module named 'gi'` ao iniciar o vpn-tray
 
 **Causa:** o shebang antigo `#!/usr/bin/env python3` resolve para o python do **linuxbrew**

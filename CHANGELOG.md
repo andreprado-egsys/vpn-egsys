@@ -4,6 +4,34 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.2.9] - 2026-10-28 (Jira PSEI-416)
+
+### Corrigido
+- **Bandeja em sessão Wayland pura** — `setup_display()` do `vpn-tray` exigia `DISPLAY` e
+  abortava com "Nenhum display encontrado" mesmo com compositor Wayland ativo quando as
+  variáveis de sessão não chegavam ao processo (autostart, `sudo -u`, shell limpo). Agora o
+  runtime dir é deduzido do uid (`/run/user/<uid>`), o `WAYLAND_DISPLAY` é descoberto pelos
+  sockets `wayland-*` desse diretório (ignorando os `*.lock`) e o abortamento só ocorre quando
+  **não há** X11 **nem** Wayland.
+- **Dois usuários na mesma máquina** — o `StatusNotifierItem` era registrado com o id fixo
+  `vpn-monitor`; o segundo tray substituía/silenciava o primeiro no watcher do KDE. O id passa a
+  ser `vpn-monitor-<uid>`.
+- **Ícone próprio fora do tema do sistema** — o `ICON_DIR` do projeto só era consultado no
+  fallback de nome; agora é registrado no `Gtk.IconTheme` (`append_search_path`) **antes** da
+  primeira busca, então o SVG do projeto resolve mesmo sem a cópia em `hicolor/`.
+- **Gate não reproduzível em Arch/CachyOS** — `test_connect_v1_rc0_without_sa_fails` lia o
+  `libcharon.so` real da estação: em strongSwan ≥ 6 sem IKEv1 o ramo específico era escolhido e a
+  asserção genérica "não estabeleceu" falhava (48 testes → 1 falha no HEAD publicado). O teste
+  agora isola `charon_ikev1_missing()` e o ramo oposto ganhou caso próprio.
+
+### Adicionado
+- **`tests/test_tray_wayland_env.py`** — regressão com execução real de `setup_display` isolado
+  por AST sobre sistema de arquivos sintético (Wayland puro, socket `.lock`, ausência total de
+  display, valores existentes preservados) e contrato textual do id por uid e do registro de
+  `ICON_DIR`. Suíte: 56 testes.
+- **`test_connect_v1_without_ikev1_in_charon_reports_rebuild`** em `tests/test_vpn_manager.py` —
+  cobre a mensagem de charon sem IKEv1 (`--enable-ikev1` / `IgnorePkg`).
+
 ## [2.2.8] - 2026-10-19 (Jira PSEI-416)
 
 ### Corrigido

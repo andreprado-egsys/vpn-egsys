@@ -481,8 +481,9 @@ exit 1
 |----------|--------------|-----------|
 | `HOME` | `/home/usuario` | Localização dos arquivos de configuração |
 | `PATH` | - | Deve incluir `~/.local/bin` |
-| `DISPLAY` | `:0` | Display X11 para GTK |
-| `XDG_RUNTIME_DIR` | `/run/user/{uid}` | Runtime directory |
+| `DISPLAY` | `:0` | Display X11 para GTK; o `vpn-tray` autodetecta em `/tmp/.X11-unix/` |
+| `WAYLAND_DISPLAY` | `wayland-0` | Sessão Wayland; o `vpn-tray` a descobre em `XDG_RUNTIME_DIR` (v2.2.9) |
+| `XDG_RUNTIME_DIR` | `/run/user/{uid}` | Runtime directory; deduzido do uid quando o ambiente não traz |
 
 ### Personalizar Localizações
 

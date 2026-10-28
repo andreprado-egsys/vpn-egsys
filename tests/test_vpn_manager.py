@@ -340,10 +340,31 @@ class TestIpsecBackendLinux(unittest.TestCase):
             subprocess.CompletedProcess([], 0, "Security Associations (0 up)\n", ""),
         ] * 8
         with patch("core.vpn_manager.time.sleep"), \
+             patch("core.vpn_manager.charon_ikev1_missing", return_value=False), \
              patch("core.vpn_manager.shutil.which", return_value='/usr/bin/ipsec'):
             ok, msg = VPNBackend.connect_ipsec_linux(self._conf())
         self.assertFalse(ok)
         self.assertIn("não estabeleceu", msg)
+
+    @patch("core.vpn_manager.run_sudo")
+    @patch("core.vpn_manager.os.path.exists")
+    def test_connect_v1_without_ikev1_in_charon_reports_rebuild(self, mock_exists, mock_run):
+        """Arch/CachyOS: charon sem IKEv1 aborta antes do gateway — a mensagem deve mandar rebuildar."""
+        mock_exists.return_value = True
+        mock_run.side_effect = [
+            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 0, "Security Associations (0 up)\n", ""),
+        ] * 8
+        with patch("core.vpn_manager.time.sleep"), \
+             patch("core.vpn_manager.charon_ikev1_missing", return_value=True), \
+             patch("core.vpn_manager.shutil.which", return_value='/usr/bin/ipsec'):
+            ok, msg = VPNBackend.connect_ipsec_linux(self._conf())
+        self.assertFalse(ok)
+        self.assertIn("SEM IKEv1", msg)
+        self.assertIn("--enable-ikev1", msg)
+        self.assertIn("IgnorePkg", msg)
+        self.assertNotIn("não estabeleceu", msg)
 
     @patch("core.vpn_manager.run_sudo")
     @patch("core.vpn_manager.os.path.exists")
