@@ -26,6 +26,9 @@ docs/GUIA_INTERNO_*
 .opencode/
 openspec/
 graphify-out/
+skills/
+docs/VPN_EGSYS_CANONICO.md
+docs/VPN_EGSYS_BACKLOG.md
 .ai_lessons_learned*
 LOGO_PROMPT*
 
